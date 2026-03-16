@@ -1,0 +1,38 @@
+package com.example.demo.repository;
+
+import com.example.demo.Appointment;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.List;
+
+@Repository
+public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
+    
+    // جلب حجوزات الطبيب بناءً على الرقم القومي الخاص به
+    List<Appointment> findByDoctorNationalId(String doctorNationalId);
+
+    // جلب حجوزات المريض بناءً على الرقم القومي الخاص به
+    List<Appointment> findByPatientNationalId(String patientNationalId);
+
+    // جلب كل مواعيد الطبيب في يوم معين (لفحص التعارض)
+    @Query("SELECT a FROM Appointment a WHERE a.doctorNationalId = :doctorNationalId AND a.appointmentDate = :date")
+    List<Appointment> findByDoctorNationalIdAndAppointmentDate(
+            @Param("doctorNationalId") String doctorNationalId,
+            @Param("date") LocalDate date
+    );
+
+    // جلب كل مواعيد المريض مع طبيب محدد في فترة الثلاثة أيام المتاحة للحجز 
+    @Query("SELECT a FROM Appointment a WHERE a.patientNationalId = :patientNationalId AND a.doctorNationalId = :doctorNationalId AND a.appointmentDate >= :startDate AND a.appointmentDate <= :endDate")
+    List<Appointment> findByPatientAndDoctorInDateRange(
+            @Param("patientNationalId") String patientNationalId,
+            @Param("doctorNationalId") String doctorNationalId,
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate
+    );
+}
+
