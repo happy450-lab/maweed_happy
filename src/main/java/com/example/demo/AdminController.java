@@ -86,6 +86,32 @@ public class AdminController {
         return ResponseEntity.ok("تم رفض وحذف طلب تسجيل الدكتور");
     }
 
+    /**
+     * ✅ جلب كل الدكاترة المسجلين في النظام (للاشتراكات والإدارة)
+     */
+    @GetMapping("/doctors")
+    public ResponseEntity<List<Doctor>> getAllDoctors() {
+        return ResponseEntity.ok(doctorRepository.findAll());
+    }
+
+    /**
+     * ✅ تفعيل أو تجديد اشتراك دكتور
+     */
+    @PutMapping("/doctors/{nationalId}/renew")
+    public ResponseEntity<?> renewDoctorSubscription(
+            @PathVariable String nationalId,
+            @RequestParam(defaultValue = "1") int months) {
+        Optional<Doctor> doctorOpt = doctorRepository.findByNationalId(nationalId);
+        if (doctorOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        Doctor doctor = doctorOpt.get();
+        doctor.setApproved(true);
+        doctor.setEnabled(true);
+        doctorRepository.save(doctor);
+        return ResponseEntity.ok("تم تجديد اشتراك الدكتور بنجاح لمدة " + months + " شهور");
+    }
+
     // ═══════════════════════════════════════════════
     // 👥 ASSISTANT REQUESTS
     // ═══════════════════════════════════════════════

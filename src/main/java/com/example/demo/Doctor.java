@@ -43,4 +43,12 @@ private  String password;
     private boolean enabled = false;
     private boolean approved = false;
     private String location; // المنطقة/المحافظة
-}
+
+    @Column(length = 500)
+    private String coverPhoto;   // صورة غلاف العيادة
+
+    private Double checkupPrice; // سعر الكشف
+
+    @Column(length = 1000)
+    private String googleMapsLink; // رابط خرائط جوجل
+}
