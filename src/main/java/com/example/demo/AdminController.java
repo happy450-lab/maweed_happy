@@ -108,6 +108,15 @@ public class AdminController {
         Doctor doctor = doctorOpt.get();
         doctor.setApproved(true);
         doctor.setEnabled(true);
+        
+        // Calculate new end date from today, or extend from existing if still valid
+        LocalDateTime now = LocalDateTime.now();
+        if (doctor.getSubscriptionEndDate() != null && doctor.getSubscriptionEndDate().isAfter(now)) {
+            doctor.setSubscriptionEndDate(doctor.getSubscriptionEndDate().plusMonths(months));
+        } else {
+            doctor.setSubscriptionEndDate(now.plusMonths(months));
+        }
+        
         doctorRepository.save(doctor);
         return ResponseEntity.ok("تم تجديد اشتراك الدكتور بنجاح لمدة " + months + " شهور");
     }

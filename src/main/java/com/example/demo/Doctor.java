@@ -51,4 +51,6 @@ private  String password;
 
     @Column(length = 1000)
     private String googleMapsLink; // رابط خرائط جوجل
+
+    private LocalDateTime subscriptionEndDate; // نهاية الاشتراك
 }
