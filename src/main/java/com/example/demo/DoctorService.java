@@ -11,6 +11,11 @@ import java.nio.file.*;
 import java.security.SecureRandom;
 
 import static com.example.demo.Role.ROLE_DOCTOR;
+import com.example.demo.DTO.UpdateProfileDTO;
+import com.example.demo.domain.WorkingHour;
+import com.example.demo.repository.WorkingHourRepository;
+
+import java.util.List;
 
 @Service
 @Data
@@ -18,6 +23,9 @@ public class DoctorService {
 
     @Autowired
     private DoctorRepository doctorRepository;
+
+    @Autowired
+    private WorkingHourRepository workingHourRepository;
 
     // حروف وأرقام عشوائية لتوليد الكود
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -123,5 +131,91 @@ public class DoctorService {
         doctor.setEnabled(true);
 
         return doctorRepository.save(doctor);
+    }
+
+    /**
+     * ✅ 6. تحديث الملف الشخصي للطبيب
+     */
+    public Doctor updateProfile(String nationalId, UpdateProfileDTO dto) {
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        if (dto.getLocation() != null) doctor.setLocation(dto.getLocation());
+        if (dto.getSpecialization() != null) doctor.setSpecialization(dto.getSpecialization());
+        if (dto.getCheckupPrice() != null) doctor.setCheckupPrice(dto.getCheckupPrice());
+        if (dto.getGoogleMapsLink() != null) doctor.setGoogleMapsLink(dto.getGoogleMapsLink());
+
+        return doctorRepository.save(doctor);
+    }
+
+    /**
+     * ✅ 7. تغيير كود التفعيل بواسطة الطبيب نفسه
+     */
+    public Doctor updateAccessCode(String nationalId, String newCode) {
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        doctor.setSpecialAccessCode(newCode);
+        return doctorRepository.save(doctor);
+    }
+
+    /**
+     * ✅ 8. حفظ مواعيد وأيام العمل
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public List<WorkingHour> saveWorkingHours(String nationalId, List<WorkingHour> hours) {
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        // Delete old hours and save new ones
+        workingHourRepository.deleteByDoctorNationalId(nationalId);
+
+        for (WorkingHour hour : hours) {
+            hour.setDoctor(doctor);
+        }
+
+        return workingHourRepository.saveAll(hours);
+    }
+
+    /**
+     * ✅ 9. رفع صورة الغلاف
+     */
+    public String uploadCover(String nationalId, MultipartFile file) throws IOException {
+        String uploadDir = "uploads/covers/";
+        java.io.File dir = new java.io.File(uploadDir);
+        if (!dir.exists()) dir.mkdirs();
+
+        String fileName = "cover_" + nationalId + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
+        Path filePath = Paths.get(uploadDir + fileName);
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        doctor.setCoverPhoto("/uploads/covers/" + fileName);
+        doctorRepository.save(doctor);
+
+        return doctor.getCoverPhoto();
+    }
+
+    /**
+     * ✅ 10. رفع الصورة الشخصية
+     */
+    public String uploadPhoto(String nationalId, MultipartFile file) throws IOException {
+        String uploadDir = "uploads/photos/";
+        java.io.File dir = new java.io.File(uploadDir);
+        if (!dir.exists()) dir.mkdirs();
+
+        String fileName = "photo_" + nationalId + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
+        Path filePath = Paths.get(uploadDir + fileName);
+        Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
+
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        doctor.setDoctorPhoto("/uploads/photos/" + fileName);
+        doctorRepository.save(doctor);
+
+        return doctor.getDoctorPhoto();
     }
 }

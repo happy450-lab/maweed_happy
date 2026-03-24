@@ -10,9 +10,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.example.demo.repository.AssistantRequestRepository;
 import com.example.demo.domain.AssistantRequest;
+import com.example.demo.DTO.UpdateProfileDTO;
+import com.example.demo.domain.WorkingHour;
+import com.example.demo.repository.WorkingHourRepository;
+
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 @CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
 @RestController
@@ -28,6 +30,9 @@ public class DoctorController {
 
     @Autowired
     private AssistantRequestRepository assistantRequestRepository;
+
+    @Autowired
+    private WorkingHourRepository workingHourRepository;
 
     /**
      * ✅ 1. تسجيل الطبيب (المرحلة الأولى)
@@ -184,5 +189,82 @@ public class DoctorController {
     @GetMapping("/assistants/{doctorNationalId}")
     public ResponseEntity<List<AssistantRequest>> getDoctorAssistants(@PathVariable String doctorNationalId) {
         return ResponseEntity.ok(assistantRequestRepository.findByDoctorNationalId(doctorNationalId));
+    }
+
+    /**
+     * ✅ 11. تحديث الملف الشخصي
+     */
+    @PutMapping("/{nationalId}/profile")
+    public ResponseEntity<?> updateProfile(@PathVariable String nationalId, @RequestBody UpdateProfileDTO dto) {
+        try {
+            Doctor updatedDoctor = doctorService.updateProfile(nationalId, dto);
+            return ResponseEntity.ok(updatedDoctor);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 12. تغيير كود التفعيل
+     */
+    @PutMapping("/{nationalId}/access-code")
+    public ResponseEntity<?> updateAccessCode(@PathVariable String nationalId, @RequestBody Map<String, String> request) {
+        try {
+            String newCode = request.get("code");
+            if (newCode == null || newCode.isEmpty()) {
+                return ResponseEntity.badRequest().body("الكود لا يمكن أن يكون فارغاً");
+            }
+            Doctor updatedDoctor = doctorService.updateAccessCode(nationalId, newCode);
+            return ResponseEntity.ok("تم تغيير كود الدخول بنجاح");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 13. رفع صورة الغلاف
+     */
+    @PostMapping("/{nationalId}/upload-cover")
+    public ResponseEntity<?> uploadCover(@PathVariable String nationalId, @RequestParam("file") MultipartFile file) {
+        try {
+            String path = doctorService.uploadCover(nationalId, file);
+            return ResponseEntity.ok(path);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("فشل رفع الصورة: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 14. رفع الصورة الشخصية
+     */
+    @PostMapping("/{nationalId}/upload-photo")
+    public ResponseEntity<?> uploadPhoto(@PathVariable String nationalId, @RequestParam("file") MultipartFile file) {
+        try {
+            String path = doctorService.uploadPhoto(nationalId, file);
+            return ResponseEntity.ok(path);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body("فشل رفع الصورة: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 15. تحديث ساعات العمل
+     */
+    @PostMapping("/{nationalId}/working-hours")
+    public ResponseEntity<?> updateWorkingHours(@PathVariable String nationalId, @RequestBody List<WorkingHour> hours) {
+        try {
+            List<WorkingHour> savedHours = doctorService.saveWorkingHours(nationalId, hours);
+            return ResponseEntity.ok(savedHours);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 16. جلب ساعات العمل
+     */
+    @GetMapping("/{nationalId}/working-hours")
+    public ResponseEntity<List<WorkingHour>> getWorkingHours(@PathVariable String nationalId) {
+        return ResponseEntity.ok(workingHourRepository.findByDoctorNationalId(nationalId));
     }
 }
