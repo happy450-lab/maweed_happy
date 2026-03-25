@@ -1,8 +1,10 @@
 package com.example.demo;
 
 import com.example.demo.repository.AppointmentRepository;
+import com.example.demo.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -18,6 +20,12 @@ public class AppointmentController {
 
     @Autowired
     private AppointmentRepository appointmentRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     // الحد الأقصى للوقت بين الحجوزات (20 دقيقة)
     private static final int MIN_GAP_MINUTES = 20;
@@ -100,13 +108,16 @@ public class AppointmentController {
             }
 
             Appointment saved = appointmentRepository.save(appointment);
+            
+            // بث الإشعار عبر الـ WebSocket
+            messagingTemplate.convertAndSend("/topic/appointments/" + saved.getDoctorNationalId(), "NEW_APPOINTMENT");
+
             System.out.println("✅ Appointment saved: doctorNationalId=" + saved.getDoctorNationalId() + ", patient=" + saved.getPatientNationalId());
             return ResponseEntity.ok(saved);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("خطأ في تسجيل الحجز: " + e.getMessage());
         }
     }
-
 
     /**
      * 2. جلب حجوزات الطبيب (للوحة تحكم الطبيب)
@@ -140,9 +151,24 @@ public class AppointmentController {
             String newStatus = payload.get("status"); // PENDING, APPROVED, REJECTED
             if (newStatus != null) {
                 String upperStatus = newStatus.toUpperCase();
-                if (upperStatus.equals("PENDING") || upperStatus.equals("APPROVED") || upperStatus.equals("REJECTED") || upperStatus.equals("DONE")) {
+                if (upperStatus.equals("PENDING") || upperStatus.equals("APPROVED") || upperStatus.equals("REJECTED") || upperStatus.equals("DONE") || upperStatus.equals("NO_SHOW")) {
                     appointment.setStatus(upperStatus);
                     appointmentRepository.save(appointment);
+
+                    // 🚨 زيادة عدد الغيابات إذا كانت الحالة NO_SHOW
+                    if (upperStatus.equals("NO_SHOW")) {
+                        userRepository.findByNationalId(appointment.getPatientNationalId()).ifPresent(user -> {
+                            user.setNoShowCount(user.getNoShowCount() + 1);
+                            if (user.getNoShowCount() >= 3) {
+                                user.setEnabled(false); // 🚫 حظر المريض بعد 3 غيابات
+                            }
+                            userRepository.save(user);
+                        });
+                    }
+
+                    // بث التحديث عبر الـ WebSocket
+                    messagingTemplate.convertAndSend("/topic/appointments/" + appointment.getDoctorNationalId(), "UPDATE_APPOINTMENT");
+
                     return ResponseEntity.ok(appointment);
                 } else {
                     return ResponseEntity.badRequest().body("حالة الحجز غير مدعومة");

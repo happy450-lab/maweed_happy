@@ -47,6 +47,40 @@ public class AdminController {
     }
 
     // ═══════════════════════════════════════════════
+    // 💰 FINANCIAL STATS — إحصائيات مالية للأدمن
+    // ═══════════════════════════════════════════════
+
+    /**
+     * ✅ حساب عدد الدكاترة اللي اشتراكهم هيخلص خلال 30 يوم
+     */
+    @GetMapping("/financial-stats")
+    public ResponseEntity<Map<String, Object>> getFinancialStats() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime thirtyDaysFromNow = now.plusDays(30);
+
+        List<Doctor> allDoctors = doctorRepository.findAll();
+        
+        long expiringSoonCount = allDoctors.stream()
+                .filter(d -> d.getSubscriptionEndDate() != null 
+                          && d.getSubscriptionEndDate().isAfter(now) 
+                          && d.getSubscriptionEndDate().isBefore(thirtyDaysFromNow))
+                .count();
+
+        // Doctors who are already expired but enabled = false (might renew)
+        long alreadyExpiredCount = allDoctors.stream()
+                .filter(d -> d.getSubscriptionEndDate() != null 
+                          && d.getSubscriptionEndDate().isBefore(now))
+                .count();
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("expiringSoonCount", expiringSoonCount);
+        stats.put("alreadyExpiredCount", alreadyExpiredCount);
+        stats.put("totalExpectedRenewals", expiringSoonCount + alreadyExpiredCount);
+        
+        return ResponseEntity.ok(stats);
+    }
+
+    // ═══════════════════════════════════════════════
     // 🩺 DOCTOR REGISTRATION REQUESTS
     // ═══════════════════════════════════════════════
 
