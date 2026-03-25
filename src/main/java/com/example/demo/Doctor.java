@@ -34,8 +34,8 @@ public class Doctor {
     private String password = "N/A";
 
     private Long doctorOwnerId;
-    @Column(nullable = false, unique = true, length = 10)
-    private String specialAccessCode;
+    @Column(nullable = false, unique = true, length = 20)
+    private String specialAccessCode = "P-" + java.util.UUID.randomUUID().toString().substring(0, 8).toUpperCase();
 // يتولد من الأدمن بعد القبول فقط
 
 
