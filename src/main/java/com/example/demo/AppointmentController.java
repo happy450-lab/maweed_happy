@@ -26,8 +26,23 @@ public class AppointmentController {
      * 1. حجز موعد جديد (من قبل المريض)
      */
     @PostMapping("/book")
-    public ResponseEntity<?> bookAppointment(@RequestBody Appointment appointment) {
+    public ResponseEntity<?> bookAppointment(@RequestBody Appointment appointment, jakarta.servlet.http.HttpServletRequest request) {
         try {
+            // حماية الـ Endpoint: التأكد من أن الطلب قادم من الموقع الرسمي فقط وليس من Postman أو أي سيرفر آخر
+            String origin = request.getHeader("Origin");
+            String referer = request.getHeader("Referer");
+            
+            boolean isValidSource = false;
+            if (origin != null && (origin.equals("http://localhost:3000") || origin.equals("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            } else if (referer != null && (referer.startsWith("http://localhost:3000") || referer.startsWith("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            }
+
+            if (!isValidSource) {
+                System.out.println("🚨 تم حظر محاولة حجز خارجية! Origin: " + origin + ", Referer: " + referer);
+                return ResponseEntity.status(403).body("غير مصرح لك بإجراء الحجز. يجب أن يتم الحجز من خلال الموقع الرسمي فقط.");
+            }
             // تنظيف الأرقام القومية من أي مسافات
             if (appointment.getDoctorNationalId() != null)
                 appointment.setDoctorNationalId(appointment.getDoctorNationalId().trim());
@@ -61,18 +76,27 @@ public class AppointmentController {
 
             LocalTime newTime = appointment.getAppointmentTime();
 
-            // فحص التعارض: لو في ميعاد قريب (أقل من 20 دقيقة فرق)
+            // فحص التعارض: السماح لمريضين كحد أقصى في نفس الموعد
+            int overlapCount = 0;
             for (Appointment existing : existingAppointments) {
+                if ("REJECTED".equals(existing.getStatus()) || "CANCELLED".equals(existing.getStatus())) {
+                    continue;
+                }
+
                 LocalTime existingTime = existing.getAppointmentTime();
                 long diffMinutes = Math.abs(
                         newTime.toSecondOfDay() - existingTime.toSecondOfDay()
                 ) / 60;
 
                 if (diffMinutes < MIN_GAP_MINUTES) {
-                    return ResponseEntity.badRequest().body(
-                            "الوقت المطلوب متعارض مع حجز آخر. يجب أن يكون الفرق بين المواعيد 20 دقيقة على الأقل."
-                    );
+                    overlapCount++;
                 }
+            }
+
+            if (overlapCount >= 2) {
+                return ResponseEntity.badRequest().body(
+                        "عفواً، اكتمل العدد الأقصى لهذا الموعد (مريضين كحد أقصى)."
+                );
             }
 
             Appointment saved = appointmentRepository.save(appointment);

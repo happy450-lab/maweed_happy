@@ -54,9 +54,7 @@ public class DoctorService {
         doctor.setNameDoctor(dto.getNameDoctor().trim());
         doctor.setNationalId(dto.getNationalId().trim());
         doctor.setPhoneNumberDoctor(dto.getPhoneNumberDoctor().trim());
-        doctor.setPassword(dto.getPassword());
         doctor.setSpecialization(dto.getSpecialization());
-        doctor.setDoctorPhoto(dto.getDoctorPhoto());
 
         doctor.setRole(ROLE_DOCTOR.name());
         doctor.setApproved(false);
