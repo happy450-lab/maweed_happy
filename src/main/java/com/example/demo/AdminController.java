@@ -51,31 +51,29 @@ public class AdminController {
     // ═══════════════════════════════════════════════
 
     /**
-     * ✅ حساب عدد الدكاترة اللي اشتراكهم هيخلص خلال 30 يوم
+     * ✅ عرض جميع الاشتراكات والحسابات (السارية والمنتهية)
      */
     @GetMapping("/financial-stats")
     public ResponseEntity<Map<String, Object>> getFinancialStats() {
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime thirtyDaysFromNow = now.plusDays(30);
 
         List<Doctor> allDoctors = doctorRepository.findAll();
         
-        long expiringSoonCount = allDoctors.stream()
+        long activeCount = allDoctors.stream()
                 .filter(d -> d.getSubscriptionEndDate() != null 
-                          && d.getSubscriptionEndDate().isAfter(now) 
-                          && d.getSubscriptionEndDate().isBefore(thirtyDaysFromNow))
+                          && d.getSubscriptionEndDate().isAfter(now))
                 .count();
 
-        // Doctors who are already expired but enabled = false (might renew)
+        // Doctors who are already expired
         long alreadyExpiredCount = allDoctors.stream()
                 .filter(d -> d.getSubscriptionEndDate() != null 
                           && d.getSubscriptionEndDate().isBefore(now))
                 .count();
 
         Map<String, Object> stats = new HashMap<>();
-        stats.put("expiringSoonCount", expiringSoonCount);
+        stats.put("activeCount", activeCount);
         stats.put("alreadyExpiredCount", alreadyExpiredCount);
-        stats.put("totalExpectedRenewals", expiringSoonCount + alreadyExpiredCount);
+        stats.put("totalExpectedRenewals", activeCount + alreadyExpiredCount);
         
         return ResponseEntity.ok(stats);
     }
