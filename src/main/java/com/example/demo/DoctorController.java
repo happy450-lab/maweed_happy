@@ -41,8 +41,21 @@ public class DoctorController {
      * يستقبل البيانات ويخزنها في جدول الدكاترة حصراً
      */
     @PostMapping("/register")
-    public ResponseEntity<?> registerDoctor(@RequestBody DoctorDTO dto) {
+    public ResponseEntity<?> registerDoctor(@RequestBody DoctorDTO dto, jakarta.servlet.http.HttpServletRequest request) {
         try {
+            // 🔒 حماية: فقط الطلبات القادمة من الموقع الرسمي
+            String origin = request.getHeader("Origin");
+            String referer = request.getHeader("Referer");
+            boolean isValidSource = false;
+            if (origin != null && (origin.equals("http://localhost:3000") || origin.equals("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            } else if (referer != null && (referer.startsWith("http://localhost:3000") || referer.startsWith("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            }
+            if (!isValidSource) {
+                return ResponseEntity.status(403).body("غير مصرح. يجب التسجيل من الموقع الرسمي فقط.");
+            }
+
             Doctor newDoctor = doctorService.registerDoctor(dto);
             return ResponseEntity.ok(newDoctor);
         } catch (RuntimeException e) {
