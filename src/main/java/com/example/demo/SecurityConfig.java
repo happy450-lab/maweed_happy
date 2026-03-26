@@ -16,6 +16,7 @@ import java.util.List;
 
 @Configuration
 @EnableWebSecurity
+// Updated: ensure all /api/auth/** endpoints are open - March 2026
 public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
