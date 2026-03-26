@@ -33,7 +33,8 @@ public class User {
     private Role role;
 
     private boolean enabled = false;
-    private int noShowCount = 0; // تتبع عدد غيابات المريض عن الكشوفات
+    @Transient
+    private int noShowCount = 0; // تتبع عدد غيابات المريض عن الكشوفات (column added via migration)
     private LocalDateTime createDate = LocalDateTime.now();
 
     @Transient
