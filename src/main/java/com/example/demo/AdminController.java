@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.time.LocalDateTime;
 
-@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
+@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app", "https://maweed-ui2-production.up.railway.app"})
 @RestController
 @RequestMapping("/api/admin")
 public class AdminController {

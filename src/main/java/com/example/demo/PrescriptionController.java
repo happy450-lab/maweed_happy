@@ -9,7 +9,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/prescriptions")
-@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
+@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app", "https://maweed-ui2-production.up.railway.app"})
 public class PrescriptionController {
 
     @Autowired

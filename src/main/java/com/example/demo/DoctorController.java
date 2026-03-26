@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
+@CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app", "https://maweed-ui2-production.up.railway.app"})
 @RestController
 @RequestMapping("/api/doctors") // المسار الموحد لكل ما يخص الطبيب
 public class DoctorController {
