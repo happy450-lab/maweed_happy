@@ -64,7 +64,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "https://maweed-ui.vercel.app", "https://maweed-ui2-production.up.railway.app")); // السماح للمحلي ولموقع Vercel و Railway
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:3000", "https://maweed-ui.vercel.app")); // السماح للمحلي ولموقع Vercel
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);
