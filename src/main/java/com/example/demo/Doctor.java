@@ -51,9 +51,19 @@ public class Doctor {
     private String coverPhoto;   // صورة غلاف العيادة
 
     private Double checkupPrice; // سعر الكشف
+    private Double recheckPrice; // سعر الإعادة
 
     @Column(length = 1000)
     private String googleMapsLink; // رابط خرائط جوجل
 
+    @Column(columnDefinition = "TEXT")
+    private String aboutDoctor; 
+
+    @Column(columnDefinition = "TEXT")
+    private String qualifications; 
+
     private LocalDateTime subscriptionEndDate; // نهاية الاشتراك
+
+    @Column(length = 500)
+    private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
 }

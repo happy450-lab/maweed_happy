@@ -154,6 +154,19 @@ public class AdminController {
         return ResponseEntity.ok("تم تجديد اشتراك الدكتور بنجاح لمدة " + months + " شهور");
     }
 
+    /**
+     * ✅ حذف دكتور من النظام وجميع بياناته المرتبطة بالكامل
+     */
+    @DeleteMapping("/doctors/{nationalId}")
+    public ResponseEntity<?> deleteRegisteredDoctor(@PathVariable String nationalId) {
+        try {
+            doctorService.deleteDoctorCompletely(nationalId);
+            return ResponseEntity.ok("تم مسح الطبيب وجميع البيانات، الحجوزات، الروشتات، والمساعدين المرتبطين به بنجاح.");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("تعذر العمل: " + e.getMessage());
+        }
+    }
+
     // ═══════════════════════════════════════════════
     // 👥 ASSISTANT REQUESTS
     // ═══════════════════════════════════════════════

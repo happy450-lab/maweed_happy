@@ -40,4 +40,7 @@ public class User {
     @Transient
     @JsonProperty("doctorNationalId") 
     private String doctorNationalId; // الحقل ده مش بيتحفظ في الداتابيز،بنستخدمه بس للرد على اللوجن للمساعدين
+
+    @Column(length = 500)
+    private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
 }

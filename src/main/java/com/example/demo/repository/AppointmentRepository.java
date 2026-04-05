@@ -16,6 +16,9 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     // جلب حجوزات الطبيب بناءً على الرقم القومي الخاص به
     List<Appointment> findByDoctorNationalId(String doctorNationalId);
 
+    void deleteByDoctorNationalId(String doctorNationalId);
+
+
     // جلب حجوزات المريض بناءً على الرقم القومي الخاص به
     List<Appointment> findByPatientNationalId(String patientNationalId);
 

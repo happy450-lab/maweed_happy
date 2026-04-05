@@ -31,4 +31,7 @@ public class AssistantRequest {
     // حالة الطلب: PENDING (قيد المراجعة), APPROVED (موافق عليه), REJECTED (مرفوض)
     @Column(nullable = false)
     private String status = "PENDING";
+
+    @Column(length = 500)
+    private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
 }

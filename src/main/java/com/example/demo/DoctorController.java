@@ -36,6 +36,29 @@ public class DoctorController {
     @Autowired
     private WorkingHourRepository workingHourRepository;
 
+    private String getCurrentUser() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return (auth != null && !auth.getPrincipal().equals("anonymousUser")) ? auth.getName() : null;
+    }
+
+    private String getCurrentRole() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && !auth.getAuthorities().isEmpty() && !auth.getPrincipal().equals("anonymousUser")) {
+            return auth.getAuthorities().iterator().next().getAuthority();
+        }
+        return null;
+    }
+
+    private boolean isAuthorized(String targetNationalId) {
+        String role = getCurrentRole();
+        String user = getCurrentUser();
+        // For endpoints strictly meant for doctors modifying their own data:
+        if ("ROLE_DOCTOR".equals(role) && user != null && !user.equals(targetNationalId)) {
+            return false;
+        }
+        return true;
+    }
+
     /**
      * ✅ 1. تسجيل الطبيب (المرحلة الأولى)
      * يستقبل البيانات ويخزنها في جدول الدكاترة حصراً
@@ -154,6 +177,10 @@ public class DoctorController {
         String assistantNationalId = request.get("assistantNationalId");
         String assistantName = request.get("assistantName"); // الاستقبال من الواجهة
 
+        if (!isAuthorized(doctorNationalId)) {
+            return ResponseEntity.status(403).body("غير مصرح لك بإضافة مساعد لطبيب آخر.");
+        }
+
         Optional<Doctor> doctorOpt = doctorRepository.findByNationalId(doctorNationalId);
         if (doctorOpt.isEmpty()) {
             return ResponseEntity.badRequest().body("الدكتور غير موجود");
@@ -166,7 +193,7 @@ public class DoctorController {
         }
 
         // تحقق إن الطلب متعملش قبل كده لنفس الشخص
-        Optional<AssistantRequest> existingRequest = assistantRequestRepository.findByDoctorNationalIdAndAssistantNationalId(doctorNationalId, assistantNationalId);
+        Optional<AssistantRequest> existingRequest = assistantRequestRepository.findByAssistantNationalIdAndDoctorNationalId(assistantNationalId, doctorNationalId);
         if (existingRequest.isPresent()) {
             return ResponseEntity.badRequest().body("يوجد طلب سابق لهذا المساعد");
         }
@@ -211,6 +238,7 @@ public class DoctorController {
      */
     @PutMapping("/{nationalId}/profile")
     public ResponseEntity<?> updateProfile(@PathVariable String nationalId, @RequestBody UpdateProfileDTO dto) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح لتعديل بيانات طبيب آخر");
         try {
             Doctor updatedDoctor = doctorService.updateProfile(nationalId, dto);
             return ResponseEntity.ok(updatedDoctor);
@@ -224,6 +252,7 @@ public class DoctorController {
      */
     @PutMapping("/{nationalId}/access-code")
     public ResponseEntity<?> updateAccessCode(@PathVariable String nationalId, @RequestBody Map<String, String> request) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
         try {
             String newCode = request.get("code");
             if (newCode == null || newCode.isEmpty()) {
@@ -241,6 +270,7 @@ public class DoctorController {
      */
     @PostMapping("/{nationalId}/upload-cover")
     public ResponseEntity<?> uploadCover(@PathVariable String nationalId, @RequestParam("file") MultipartFile file) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
         try {
             String path = doctorService.uploadCover(nationalId, file);
             return ResponseEntity.ok(path);
@@ -254,6 +284,7 @@ public class DoctorController {
      */
     @PostMapping("/{nationalId}/upload-photo")
     public ResponseEntity<?> uploadPhoto(@PathVariable String nationalId, @RequestParam("file") MultipartFile file) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
         try {
             String path = doctorService.uploadPhoto(nationalId, file);
             return ResponseEntity.ok(path);
@@ -267,6 +298,7 @@ public class DoctorController {
      */
     @PostMapping("/{nationalId}/working-hours")
     public ResponseEntity<?> updateWorkingHours(@PathVariable String nationalId, @RequestBody List<WorkingHour> hours) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
         try {
             List<WorkingHour> savedHours = doctorService.saveWorkingHours(nationalId, hours);
             return ResponseEntity.ok(savedHours);

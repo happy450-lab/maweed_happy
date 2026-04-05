@@ -12,4 +12,8 @@ public class DoctorDTO {
     @Column(nullable = false, unique = true, length = 20)
     private String  specialAccessCode;
 
+    private String aboutDoctor;
+    private String qualifications;
+    private Double checkupPrice;
+    private Double recheckPrice;
 }

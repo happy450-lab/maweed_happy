@@ -19,8 +19,13 @@ public interface AssistantRequestRepository extends JpaRepository<AssistantReque
     // لجلب طلبات أو مساعدين دكتور معين
     List<AssistantRequest> findByDoctorNationalId(String doctorNationalId);
 
+    void deleteByDoctorNationalId(String doctorNationalId);
+
     // للتأكد إن الدكتور مبعتش نفس الطلب قبل كده لنفس الرقم القومي
-    Optional<AssistantRequest> findByDoctorNationalIdAndAssistantNationalId(String doctorNationalId, String assistantNationalId);
+    Optional<AssistantRequest> findByAssistantNationalIdAndDoctorNationalId(String assistantNationalId, String doctorNationalId);
+    
+    // لجلب طلبات أو مساعدين برقمهم القومي
+    List<AssistantRequest> findByAssistantNationalId(String assistantNationalId);
 
     // لعدد كل الطلبات بحالة معينة (notification badge)
     long countByStatus(String status);

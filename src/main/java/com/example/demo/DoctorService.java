@@ -14,6 +14,9 @@ import static com.example.demo.Role.ROLE_DOCTOR;
 import com.example.demo.DTO.UpdateProfileDTO;
 import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.WorkingHourRepository;
+import com.example.demo.repository.AppointmentRepository;
+import com.example.demo.repository.PrescriptionRepository;
+import com.example.demo.repository.AssistantRequestRepository;
 
 import java.util.List;
 
@@ -26,6 +29,15 @@ public class DoctorService {
 
     @Autowired
     private WorkingHourRepository workingHourRepository;
+
+    @Autowired
+    private AppointmentRepository appointmentRepository;
+
+    @Autowired
+    private PrescriptionRepository prescriptionRepository;
+
+    @Autowired
+    private AssistantRequestRepository assistantRequestRepository;
 
     // حروف وأرقام عشوائية لتوليد الكود
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -141,7 +153,10 @@ public class DoctorService {
         if (dto.getLocation() != null) doctor.setLocation(dto.getLocation());
         if (dto.getSpecialization() != null) doctor.setSpecialization(dto.getSpecialization());
         if (dto.getCheckupPrice() != null) doctor.setCheckupPrice(dto.getCheckupPrice());
+        if (dto.getRecheckPrice() != null) doctor.setRecheckPrice(dto.getRecheckPrice());
         if (dto.getGoogleMapsLink() != null) doctor.setGoogleMapsLink(dto.getGoogleMapsLink());
+        if (dto.getAboutDoctor() != null) doctor.setAboutDoctor(dto.getAboutDoctor());
+        if (dto.getQualifications() != null) doctor.setQualifications(dto.getQualifications());
 
         return doctorRepository.save(doctor);
     }
@@ -215,5 +230,41 @@ public class DoctorService {
         doctorRepository.save(doctor);
 
         return doctor.getDoctorPhoto();
+    }
+
+    /**
+     * ✅ 11. حذف الطبيب وجميع البيانات المرتبطة به نهائياً (ديناميكي)
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public void deleteDoctorCompletely(String nationalId) {
+        Doctor doctor = doctorRepository.findByNationalId(nationalId)
+                .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+
+        // Delete from all related tables
+        appointmentRepository.deleteByDoctorNationalId(nationalId);
+        prescriptionRepository.deleteByDoctorNationalId(nationalId);
+        assistantRequestRepository.deleteByDoctorNationalId(nationalId);
+        workingHourRepository.deleteByDoctorNationalId(nationalId);
+
+        // Try to delete physical files if they exist
+        try {
+            if (doctor.getDoctorPhoto() != null && !doctor.getDoctorPhoto().isEmpty()) {
+                Path photoPath = Paths.get(doctor.getDoctorPhoto().replaceFirst("^/", ""));
+                Files.deleteIfExists(photoPath);
+            }
+            if (doctor.getCoverPhoto() != null && !doctor.getCoverPhoto().isEmpty()) {
+                Path coverPath = Paths.get(doctor.getCoverPhoto().replaceFirst("^/", ""));
+                Files.deleteIfExists(coverPath);
+            }
+            if (doctor.getDoctorCertificate() != null && !doctor.getDoctorCertificate().isEmpty()) {
+                Path certPath = Paths.get(doctor.getDoctorCertificate().replaceFirst("^/", ""));
+                Files.deleteIfExists(certPath);
+            }
+        } catch (Exception e) {
+            System.err.println("Failed to delete doctor files: " + e.getMessage());
+        }
+
+        // Finally, delete the doctor record itself
+        doctorRepository.delete(doctor);
     }
 }

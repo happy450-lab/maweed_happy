@@ -31,6 +31,22 @@ public class AppointmentController {
     private static final int MIN_GAP_MINUTES = 20;
 
     /**
+     * Helper to get current principal
+     */
+    private String getCurrentUser() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return (auth != null && !auth.getPrincipal().equals("anonymousUser")) ? auth.getName() : null;
+    }
+
+    private String getCurrentRole() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && !auth.getAuthorities().isEmpty() && !auth.getPrincipal().equals("anonymousUser")) {
+            return auth.getAuthorities().iterator().next().getAuthority();
+        }
+        return null;
+    }
+
+    /**
      * 1. حجز موعد جديد (من قبل المريض)
      */
     @PostMapping("/book")
@@ -56,6 +72,13 @@ public class AppointmentController {
                 appointment.setDoctorNationalId(appointment.getDoctorNationalId().trim());
             if (appointment.getPatientNationalId() != null)
                 appointment.setPatientNationalId(appointment.getPatientNationalId().trim());
+
+            // 🔒 التحقق من الهوية (IDOR Protection)
+            String curRole = getCurrentRole();
+            String curUser = getCurrentUser();
+            if ("ROLE_PATIENT".equals(curRole) && !curUser.equals(appointment.getPatientNationalId())) {
+                return ResponseEntity.status(403).body("لا يمكنك حجز موعد لمريض آخر.");
+            }
 
             // 1. فحص قاعدة: ميعاد واحد للمريض مع نفس الدكتور خلال الـ 3 أيام كحد أقصى
             LocalDate today = LocalDate.now();
@@ -125,6 +148,14 @@ public class AppointmentController {
     @GetMapping("/doctor/{nationalId}")
     public ResponseEntity<List<Appointment>> getDoctorAppointments(@PathVariable String nationalId) {
         String trimmedId = nationalId.trim();
+
+        // 🔒 التحقق من الهوية (IDOR Protection)
+        String curRole = getCurrentRole();
+        String curUser = getCurrentUser();
+        if ("ROLE_DOCTOR".equals(curRole) && !trimmedId.equals(curUser)) {
+            return ResponseEntity.status(403).build();
+        }
+
         System.out.println("📋 Fetching appointments for doctorNationalId: [" + trimmedId + "]");
         List<Appointment> appointments = appointmentRepository.findByDoctorNationalId(trimmedId);
         System.out.println("📋 Found: " + appointments.size() + " appointments");
@@ -136,6 +167,11 @@ public class AppointmentController {
      */
     @GetMapping("/patient/{nationalId}")
     public ResponseEntity<List<Appointment>> getPatientAppointments(@PathVariable String nationalId) {
+        // 🔒 التحقق من الهوية (IDOR Protection)
+        if ("ROLE_PATIENT".equals(getCurrentRole()) && !nationalId.equals(getCurrentUser())) {
+            return ResponseEntity.status(403).build();
+        }
+
         List<Appointment> appointments = appointmentRepository.findByPatientNationalId(nationalId);
         return ResponseEntity.ok(appointments);
     }
@@ -148,6 +184,14 @@ public class AppointmentController {
         Optional<Appointment> optionalAppointment = appointmentRepository.findById(id);
         if (optionalAppointment.isPresent()) {
             Appointment appointment = optionalAppointment.get();
+
+            // 🔒 التحقق من الهوية
+            String curRole = getCurrentRole();
+            String curUser = getCurrentUser();
+            if ("ROLE_DOCTOR".equals(curRole) && !apartmentNationalIdMatchesDoctor(appointment, curUser)) {
+                return ResponseEntity.status(403).body("غير مصرح لك بتعديل حالة حجز لطبيب آخر.");
+            }
+
             String newStatus = payload.get("status"); // PENDING, APPROVED, REJECTED
             if (newStatus != null) {
                 String upperStatus = newStatus.toUpperCase();
@@ -182,11 +226,29 @@ public class AppointmentController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteAppointment(@PathVariable Long id) {
-        if (appointmentRepository.existsById(id)) {
+        Optional<Appointment> opt = appointmentRepository.findById(id);
+        if (opt.isPresent()) {
+            Appointment appointment = opt.get();
+
+            // 🔒 التحقق من الهوية
+            String curRole = getCurrentRole();
+            String curUser = getCurrentUser();
+            
+            if ("ROLE_PATIENT".equals(curRole) && !curUser.equals(appointment.getPatientNationalId())) {
+                return ResponseEntity.status(403).body("لا يمكنك حذف حجز لا يخصك.");
+            }
+            if ("ROLE_DOCTOR".equals(curRole) && !apartmentNationalIdMatchesDoctor(appointment, curUser)) {
+                return ResponseEntity.status(403).body("لا يمكنك حذف حجز لا يخصك.");
+            }
+
             appointmentRepository.deleteById(id);
             return ResponseEntity.ok("تم حذف الحجز بنجاح");
         }
         return ResponseEntity.notFound().build();
+    }
+    private boolean apartmentNationalIdMatchesDoctor(Appointment appointment, String doctorId) {
+        if (appointment.getDoctorNationalId() == null) return false;
+        return appointment.getDoctorNationalId().trim().equals(doctorId);
     }
 }
 

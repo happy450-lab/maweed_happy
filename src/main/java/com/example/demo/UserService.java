@@ -16,17 +16,18 @@ public class UserService {
     @Autowired
     private UserRepository userRepository;
 
-
     @Autowired
     private DoctorRepository doctorRepository;
 
     @Autowired
     private AssistantRequestRepository assistantRequestRepository;
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     public User registerPatient(UserDTO dto) {
         validateBasicData(dto.getFullName(), dto.getNationalId(), dto.getPhoneNumber());
 
-        // تصحيح النقطة المفقودة هنا
         if (userRepository.findByNationalId(dto.getNationalId()).isPresent()) {
             throw new RuntimeException("هذا الرقم القومي مسجل مسبقاً كمريض.");
         }
@@ -34,7 +35,6 @@ public class UserService {
         User user = new User();
         user.setFullName(dto.getFullName().trim());
         user.setNationalId(dto.getNationalId().trim());
-        // تأكد أن اسم الحقل في الـ User هو phoneNumber
         user.setPhoneNumber(dto.getPhoneNumber().trim());
         user.setPassword(dto.getPassword());
         user.setRole(Role.ROLE_PATIENT);
@@ -45,37 +45,44 @@ public class UserService {
     public LoginResponse login(String nationalId, String password) {
         System.out.println("=== LOGIN ATTEMPT ===");
         System.out.println("National ID: [" + nationalId + "]");
-        System.out.println("Password/Code: [" + password + "]");
 
-        // 1. لو دكتور (الرقم القومي موجود في جدول الدكاترة)
+        // 1. دكتور
         Optional<Doctor> doctor = doctorRepository.findByNationalId(nationalId);
         if (doctor.isPresent()) {
             Doctor d = doctor.get();
-            // الدكتور يسجل فقط بالكود الخاص بيه (specialAccessCode)
             if (password != null && password.equals(d.getSpecialAccessCode())) {
                 System.out.println("Login success: DOCTOR -> " + d.getNameDoctor());
+                
+                checkConcurrentLogin(d.getActiveToken());
+
+                String token = jwtUtil.generateToken(d.getNationalId(), "ROLE_DOCTOR");
+                d.setActiveToken(token);
+                doctorRepository.save(d);
+
                 return new LoginResponse(
                         d.getNationalId(),
                         d.getNameDoctor(),
                         "ROLE_DOCTOR",
                         null,
                         d.getSpecialization(),
-                        d.getDoctorPhoto()
+                        d.getDoctorPhoto(),
+                        token
                 );
             } else {
-                // الرقم القومي ده بتاع دكتور لكن الكود غلط → رفض فوري بدون محاولة أدوار أخرى
                 System.out.println("Login failed: DOCTOR found but wrong specialAccessCode.");
                 return null;
             }
         }
 
-        // 2. لو مساعد (الرقم القومي موجود في طلبات المساعدين المعتمدة + كود الدكتور صح)
+        // 2. مساعد
         Optional<AssistantRequest> assistantRequest = assistantRequestRepository
                 .findByAssistantNationalIdAndDoctorCodeAndStatus(nationalId, password, "APPROVED");
 
         if (assistantRequest.isPresent()) {
             AssistantRequest ar = assistantRequest.get();
-            System.out.println("Login success: ASSISTANT matched with APPROVED status.");
+            System.out.println("Login success: ASSISTANT");
+
+            checkConcurrentLogin(ar.getActiveToken());
 
             String name = ar.getAssistantName();
             Optional<User> userRecord = userRepository.findByNationalId(nationalId);
@@ -89,28 +96,51 @@ public class UserService {
                 docPhoto = linkedDoc.get().getDoctorPhoto();
             }
 
-            return new LoginResponse(nationalId, name, "ROLE_ACCOUNTANT", ar.getDoctorNationalId(), null, docPhoto);
+            String token = jwtUtil.generateToken(nationalId, "ROLE_ACCOUNTANT");
+            ar.setActiveToken(token);
+            assistantRequestRepository.save(ar);
+
+            return new LoginResponse(nationalId, name, "ROLE_ACCOUNTANT", ar.getDoctorNationalId(), null, docPhoto, token);
         }
 
-        // 3. لو مريض (الرقم القومي موجود في جدول المرضى + كلمة السر صح)
+        // 3. مريض
         Optional<User> patient = userRepository.findByNationalId(nationalId);
         if (patient.isPresent()) {
             User u = patient.get();
-            // تحقق من كلمة السر بدقة
             if (password != null && password.equals(u.getPassword())) {
                 System.out.println("Login success: PATIENT -> " + u.getFullName());
+                
+                checkConcurrentLogin(u.getActiveToken());
+
                 String roleName = (u.getRole() != null) ? u.getRole().name() : "ROLE_PATIENT";
-                return new LoginResponse(u.getNationalId(), u.getFullName(), roleName, null, null, null);
+                String token = jwtUtil.generateToken(u.getNationalId(), roleName);
+                
+                u.setActiveToken(token);
+                userRepository.save(u);
+
+                return new LoginResponse(u.getNationalId(), u.getFullName(), roleName, null, null, null, token);
             } else {
-                System.out.println("Login failed: PATIENT found but wrong password.");
+                System.out.println("Login failed: PATIENT wrong password.");
                 return null;
             }
         }
 
-        // 4. الرقم القومي غير موجود نهائياً في أي جدول
-        System.out.println("Login failed: National ID not found in any table.");
+        System.out.println("Login failed: National ID not found.");
         return null;
     }
+
+    private void checkConcurrentLogin(String storedActiveToken) {
+        if (storedActiveToken != null) {
+            try {
+                if (jwtUtil.isTokenValid(storedActiveToken)) {
+                    throw new RuntimeException("تم تسجيل الدخول بهذا الحساب من جهاز آخر. قم بتسجيل الخروج من الجهاز الآخر أولاً.");
+                }
+            } catch (Exception e) {
+                // الكود انتهي أو التوكن القديم باظ، نقدر نعمل تسجيل دخول عادي
+            }
+        }
+    }
+
     private void validateBasicData(String fullName, String nationalId, String phoneNumber) {
         if (fullName == null || fullName.trim().isEmpty()) {
             throw new RuntimeException("الاسم لا يمكن أن يكون فارغاً!");
