@@ -91,4 +91,10 @@ public class JwtFilter extends OncePerRequestFilter {
 
         filterChain.doFilter(request, response);
     }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        // Admin endpoints are protected by AdminSecurityFilter — skip JWT for them
+        return request.getRequestURI().startsWith("/api/admin");
+    }
 }
