@@ -1,12 +1,15 @@
 package com.example.demo;
 
+import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.AppointmentRepository;
 import com.example.demo.repository.UserRepository;
+import com.example.demo.repository.WorkingHourRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -27,8 +30,25 @@ public class AppointmentController {
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
+    private WorkingHourRepository workingHourRepository;
+
     // الحد الأقصى للوقت بين الحجوزات (20 دقيقة)
     private static final int MIN_GAP_MINUTES = 20;
+
+    // تحويل يوم الأسبوع الإنجليزي إلى العربي (لمطابقة قاعدة البيانات)
+    private String toArabicDay(DayOfWeek dow) {
+        switch (dow) {
+            case SATURDAY:  return "السبت";
+            case SUNDAY:    return "الأحد";
+            case MONDAY:    return "الاثنين";
+            case TUESDAY:   return "الثلاثاء";
+            case WEDNESDAY: return "الأربعاء";
+            case THURSDAY:  return "الخميس";
+            case FRIDAY:    return "الجمعة";
+            default:        return "";
+        }
+    }
 
     /**
      * Helper to get current principal
@@ -130,6 +150,20 @@ public class AppointmentController {
                 );
             }
 
+            // 3. فحص أيام الإجازة: تأكد أن اليوم المختار ليس يوم إجازة للدكتور
+            String doctorNatId = appointment.getDoctorNationalId();
+            List<WorkingHour> workingHours = workingHourRepository.findByDoctorNationalId(doctorNatId);
+            if (!workingHours.isEmpty()) {
+                String arabicDay = toArabicDay(appointment.getAppointmentDate().getDayOfWeek());
+                boolean isOffDay = workingHours.stream()
+                        .anyMatch(wh -> wh.getDayOfWeek().equals(arabicDay) && wh.isOff());
+                if (isOffDay) {
+                    return ResponseEntity.badRequest().body(
+                            "عفواً، الطبيب في إجازة يوم " + arabicDay + ". يرجى اختيار يوم عمل آخر."
+                    );
+                }
+            }
+
             Appointment saved = appointmentRepository.save(appointment);
             
             // بث الإشعار عبر الـ WebSocket
@@ -195,7 +229,7 @@ public class AppointmentController {
             String newStatus = payload.get("status"); // PENDING, APPROVED, REJECTED
             if (newStatus != null) {
                 String upperStatus = newStatus.toUpperCase();
-                if (upperStatus.equals("PENDING") || upperStatus.equals("APPROVED") || upperStatus.equals("REJECTED") || upperStatus.equals("DONE") || upperStatus.equals("NO_SHOW")) {
+                if (upperStatus.equals("PENDING") || upperStatus.equals("APPROVED") || upperStatus.equals("REJECTED") || upperStatus.equals("DONE") || upperStatus.equals("NO_SHOW") || upperStatus.equals("ARRIVED")) {
                     appointment.setStatus(upperStatus);
                     appointmentRepository.save(appointment);
 
@@ -242,6 +276,8 @@ public class AppointmentController {
             }
 
             appointmentRepository.deleteById(id);
+            // بث التحديث عبر الـ WebSocket
+            messagingTemplate.convertAndSend("/topic/appointments/" + appointment.getDoctorNationalId(), "DELETE_APPOINTMENT");
             return ResponseEntity.ok("تم حذف الحجز بنجاح");
         }
         return ResponseEntity.notFound().build();
