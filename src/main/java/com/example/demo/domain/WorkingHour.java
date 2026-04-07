@@ -2,6 +2,7 @@ package com.example.demo.domain;
 
 import com.example.demo.Doctor;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -30,5 +31,6 @@ public class WorkingHour {
     @Column(nullable = false)
     private LocalTime endTime;
 
+    @JsonProperty("isOff")
     private boolean isOff = false;
 }
