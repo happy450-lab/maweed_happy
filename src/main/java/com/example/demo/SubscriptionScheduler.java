@@ -41,6 +41,15 @@ public class SubscriptionScheduler {
                 System.out.println("🔴 [Scheduler] تم تعطيل حساب الدكتور: " + doctor.getNameDoctor()
                         + " | انتهى الاشتراك: " + doctor.getSubscriptionEndDate());
             }
+
+            // 🚨 فحص التحايل (Daily Ban) والحسابات غير المعتمدة
+            if (!doctor.isApproved() && doctor.isEnabled()) {
+                doctor.setEnabled(false);
+                doctor.setActiveToken(null);
+                doctor.setSpecialAccessCode(null);
+                doctorRepository.save(doctor);
+                System.out.println("🚨 ⛔ [Security Guard] تم تبنيد وحظر حساب بشكل فوري لمحاولته التواجد كحساب رسمي وهو لم يستلم كود أو غير معتمد: " + doctor.getNameDoctor() + " | بطاقة: " + doctor.getNationalId());
+            }
         }
 
         System.out.println("✅ [Scheduler] انتهى الفحص. عدد الحسابات المعطّلة: " + disabledCount);

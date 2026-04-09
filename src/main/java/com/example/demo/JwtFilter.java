@@ -34,6 +34,40 @@ public class JwtFilter extends OncePerRequestFilter {
     @Autowired
     private com.example.demo.repository.AssistantRequestRepository assistantRepository;
 
+    private static final List<String> ALLOWED_ORIGINS = List.of(
+        "http://localhost:3000",
+        "https://maweed-ui.vercel.app"
+    );
+
+    private void banAccount(String nationalId, String role) {
+        System.out.println("🚨🚨 حظر فوري للحساب: " + nationalId + " (دور: " + role + ") — محاولة تجاوز الموقع الرسمي!");
+        try {
+            if ("ROLE_PATIENT".equals(role)) {
+                userRepository.findByNationalId(nationalId).ifPresent(user -> {
+                    user.setEnabled(false);
+                    user.setActiveToken(null);
+                    userRepository.save(user);
+                });
+            } else if ("ROLE_DOCTOR".equals(role)) {
+                doctorRepository.findByNationalId(nationalId).ifPresent(doctor -> {
+                    doctor.setEnabled(false);
+                    doctor.setActiveToken(null);
+                    doctorRepository.save(doctor);
+                });
+            } else if ("ROLE_ACCOUNTANT".equals(role)) {
+                assistantRepository.findByAssistantNationalId(nationalId).forEach(a -> {
+                    if ("APPROVED".equals(a.getStatus())) {
+                        a.setActiveToken(null);
+                        a.setStatus("REJECTED");
+                        assistantRepository.save(a);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            System.err.println("خطأ أثناء الحظر: " + e.getMessage());
+        }
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -47,6 +81,36 @@ public class JwtFilter extends OncePerRequestFilter {
                 if (jwtUtil.isTokenValid(token)) {
                     String nationalId = jwtUtil.extractNationalId(token);
                     String role = jwtUtil.extractRole(token);
+                    
+                    // 🚨 فحص المصدر
+                    String origin = request.getHeader("Origin");
+                    String referer = request.getHeader("Referer");
+                    String uri = request.getRequestURI();
+                    boolean isWebSocket = uri.startsWith("/ws-maweed") || uri.startsWith("/api/ws");
+
+                    boolean isValidOrigin = false;
+                    if (origin != null) {
+                        isValidOrigin = ALLOWED_ORIGINS.contains(origin);
+                    } else if (referer != null) {
+                        for (String allowed : ALLOWED_ORIGINS) {
+                            if (referer.startsWith(allowed)) {
+                                isValidOrigin = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        // لو مفيش خالص (Postman)
+                        isValidOrigin = false;
+                    }
+
+                    if (!isWebSocket && !isValidOrigin) {
+                        banAccount(nationalId, role);
+                        SecurityContextHolder.clearContext();
+                        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                        response.setContentType("application/json;charset=UTF-8");
+                        response.getWriter().write("{\"error\":\"تم حظر حسابك لمحاولة الوصول غير المصرح بها.\"}");
+                        return; // وقف الـ request فوراً
+                    }
                     
                     boolean isActive = false;
                     

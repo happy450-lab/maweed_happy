@@ -15,4 +15,13 @@ public class LoginResponse {
     private String specialization;   // للأطباء
     private String photo;            // صورة الطبيب
     private String token;            // 🔐 JWT Token
+
+    public LoginResponse(String nationalId, String fullName, String role, String doctorNationalId, String specialization, String photo) {
+        this.nationalId = nationalId;
+        this.fullName = fullName;
+        this.role = role;
+        this.doctorNationalId = doctorNationalId;
+        this.specialization = specialization;
+        this.photo = photo;
+    }
 }

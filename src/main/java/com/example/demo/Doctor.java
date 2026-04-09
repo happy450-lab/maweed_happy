@@ -64,6 +64,9 @@ public class Doctor {
 
     private LocalDateTime subscriptionEndDate; // نهاية الاشتراك
 
+    private Double averageRating = 0.0;
+    private Integer totalReviews = 0;
+
     @Column(length = 500)
     private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
 }

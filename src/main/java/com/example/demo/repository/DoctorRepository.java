@@ -18,4 +18,10 @@ public interface DoctorRepository extends JpaRepository<Doctor, Long> {
 
     // لعدد الطلبات المعلقة (notification badge)
     long countByApprovedFalse();
+
+    // جلب أفضل 5 أطباء حسب التقييم
+    List<Doctor> findTop5ByApprovedTrueAndEnabledTrueOrderByAverageRatingDesc();
+
+    // جلب جميع الدكاترة الموافق عليهم والمفعلين (للصفحة العامة)
+    List<Doctor> findByApprovedTrueAndEnabledTrue();
 }

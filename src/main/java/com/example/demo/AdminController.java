@@ -3,6 +3,8 @@ package com.example.demo;
 import com.example.demo.domain.AssistantRequest;
 import com.example.demo.repository.AssistantRequestRepository;
 import com.example.demo.repository.DoctorRepository;
+import com.example.demo.DTO.DoctorAdminDTO;
+import com.example.demo.DTO.AssistantResponseDTO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.time.LocalDateTime;
+import java.util.stream.Collectors;
 
 @CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
 @RestController
@@ -83,11 +86,16 @@ public class AdminController {
     // ═══════════════════════════════════════════════
 
     /**
-     * ✅ جلب كل الدكاترة اللي لسه مش متقبلوش
+     * ✅ جلب كل الدكاترة اللي لسه متقبلوش
+     * 🔒 يرجع DoctorAdminDTO (بالـ nationalId للإدارة) بدون activeToken أو password
      */
     @GetMapping("/doctor-requests")
-    public ResponseEntity<List<Doctor>> getPendingDoctors() {
-        return ResponseEntity.ok(doctorRepository.findByApprovedFalse());
+    public ResponseEntity<List<DoctorAdminDTO>> getPendingDoctors() {
+        List<DoctorAdminDTO> result = doctorRepository.findByApprovedFalse()
+                .stream()
+                .map(DoctorAdminDTO::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -121,10 +129,15 @@ public class AdminController {
 
     /**
      * ✅ جلب كل الدكاترة المسجلين في النظام (للاشتراكات والإدارة)
+     * 🔒 يرجع DoctorAdminDTO بدون activeToken أو password
      */
     @GetMapping("/doctors")
-    public ResponseEntity<List<Doctor>> getAllDoctors() {
-        return ResponseEntity.ok(doctorRepository.findAll());
+    public ResponseEntity<List<DoctorAdminDTO>> getAllDoctors() {
+        List<DoctorAdminDTO> result = doctorRepository.findAll()
+                .stream()
+                .map(DoctorAdminDTO::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -173,10 +186,15 @@ public class AdminController {
 
     /**
      * ✅ عرض كل طلبات إضافة المساعدين (للمدير)
+     * 🔒 يرجع AssistantResponseDTO بدون activeToken
      */
     @GetMapping("/assistant-requests")
-    public ResponseEntity<List<AssistantRequest>> getAllRequests() {
-        return ResponseEntity.ok(assistantRequestRepository.findAll());
+    public ResponseEntity<List<AssistantResponseDTO>> getAllRequests() {
+        List<AssistantResponseDTO> result = assistantRequestRepository.findAll()
+                .stream()
+                .map(AssistantResponseDTO::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
     }
 
     /**

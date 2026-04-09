@@ -2,6 +2,7 @@ package com.example.demo;
 
 import com.example.demo.DTO.LoginResponse;
 import com.example.demo.DTO.UserDTO;
+import com.example.demo.DTO.UserResponseDTO;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -13,23 +14,50 @@ import org.springframework.web.bind.annotation.*;
 public class UserController {
 
     @Autowired
+    private JwtUtil jwtUtil;
+
+    @Autowired
     private UserService userService;
 
     /**
      * ✅ تسجيل مريض جديد
-     * تم تغيير المناداة لـ registerPatient لتطابق السيرفس الجديدة
+     * 🔒 محمي: يرفض أي طلب من خارج الموقع الرسمي (Postman, curl, مواقع أخرى)
      */
     @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@Valid @RequestBody UserDTO userDTO) {
+    public ResponseEntity<?> registerUser(
+            @Valid @RequestBody UserDTO userDTO,
+            jakarta.servlet.http.HttpServletRequest request) {
         try {
+            // 🔒 فحص المصدر — فقط الموقع الرسمي مسموح له بالتسجيل
+            String origin = request.getHeader("Origin");
+            String referer = request.getHeader("Referer");
+            boolean isValidSource = false;
+
+            if (origin != null && (
+                    origin.equals("http://localhost:3000") ||
+                    origin.equals("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            } else if (referer != null && (
+                    referer.startsWith("http://localhost:3000") ||
+                    referer.startsWith("https://maweed-ui.vercel.app"))) {
+                isValidSource = true;
+            }
+
+            if (!isValidSource) {
+                System.out.println("🚨 محاولة تسجيل من مصدر غير مصرح به! Origin: " + origin + ", Referer: " + referer);
+                return ResponseEntity.status(403).body("غير مصرح. يجب التسجيل من الموقع الرسمي فقط.");
+            }
+
             // بننادي الميثود اللي بتسيف في جدول المرضى فقط
             User savedAccount = userService.registerPatient(userDTO);
-            return ResponseEntity.ok(savedAccount);
+            // 🔒 نرجع DTO آمن بدون password أو activeToken
+            return ResponseEntity.ok(UserResponseDTO.from(savedAccount));
         } catch (Exception e) {
             // معالجة الخطأ في حالة الرقم القومي المسجل مسبقاً
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
 
     /**
      * ✅ ميثود اللوجن الموحدة (مرضى ودكاترة)
@@ -40,6 +68,30 @@ public class UserController {
             LoginResponse response = userService.login(loginDto.getNationalId(), loginDto.getPassword()); 
         
             if (response != null) {
+                // 1. Generate JWT Token
+                String token = jwtUtil.generateToken(response.getNationalId(), response.getRole());
+                response.setToken(token);
+
+                // 2. Save active token to database to prevent concurrent logins globally
+                if ("ROLE_PATIENT".equals(response.getRole())) {
+                    userRepository.findByNationalId(response.getNationalId()).ifPresent(u -> {
+                        u.setActiveToken(token);
+                        userRepository.save(u);
+                    });
+                } else if ("ROLE_DOCTOR".equals(response.getRole())) {
+                    doctorRepository.findByNationalId(response.getNationalId()).ifPresent(d -> {
+                        d.setActiveToken(token);
+                        doctorRepository.save(d);
+                    });
+                } else if ("ROLE_ACCOUNTANT".equals(response.getRole())) {
+                    assistantRepository.findByAssistantNationalId(response.getNationalId()).forEach(a -> {
+                        if ("APPROVED".equals(a.getStatus())) {
+                            a.setActiveToken(token);
+                            assistantRepository.save(a);
+                        }
+                    });
+                }
+
                 return ResponseEntity.ok(response);
             }
             return ResponseEntity.status(401).body("الرقم القومي أو كلمة المرور غير صحيحة");

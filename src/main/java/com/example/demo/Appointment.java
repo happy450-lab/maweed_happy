@@ -40,4 +40,7 @@ public class Appointment {
 
     @Column(nullable = true)
     private String visitType; // كشف أو إعادة
+
+    @Column(columnDefinition = "boolean default false")
+    private Boolean isReviewed = false;
 }

@@ -51,6 +51,12 @@ public class UserService {
         if (doctor.isPresent()) {
             Doctor d = doctor.get();
             if (password != null && password.equals(d.getSpecialAccessCode())) {
+                // 🚨 منع التلاعب: حتى لو حصل على الكود، يجب أن يكون معتمد رسمياً
+                if (!d.isApproved() || !d.isEnabled()) {
+                    System.out.println("🚨 Login Block: Unauthorized DOCTOR -> " + d.getNameDoctor());
+                    return null;
+                }
+                
                 System.out.println("Login success: DOCTOR -> " + d.getNameDoctor());
                 
                 checkConcurrentLogin(d.getActiveToken());

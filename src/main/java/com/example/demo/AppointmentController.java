@@ -4,6 +4,7 @@ import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.AppointmentRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.repository.WorkingHourRepository;
+import com.example.demo.repository.DoctorRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -32,6 +33,9 @@ public class AppointmentController {
 
     @Autowired
     private WorkingHourRepository workingHourRepository;
+
+    @Autowired
+    private DoctorRepository doctorRepository;
 
     // الحد الأقصى للوقت بين الحجوزات (20 دقيقة)
     private static final int MIN_GAP_MINUTES = 20;
@@ -70,7 +74,7 @@ public class AppointmentController {
      * 1. حجز موعد جديد (من قبل المريض)
      */
     @PostMapping("/book")
-    public ResponseEntity<?> bookAppointment(@RequestBody Appointment appointment, jakarta.servlet.http.HttpServletRequest request) {
+    public ResponseEntity<?> bookAppointment(@RequestBody Appointment appointment, @RequestParam(required = false) Long doctorId, jakarta.servlet.http.HttpServletRequest request) {
         try {
             // حماية الـ Endpoint: التأكد من أن الطلب قادم من الموقع الرسمي فقط وليس من Postman أو أي سيرفر آخر
             String origin = request.getHeader("Origin");
@@ -87,6 +91,17 @@ public class AppointmentController {
                 System.out.println("🚨 تم حظر محاولة حجز خارجية! Origin: " + origin + ", Referer: " + referer);
                 return ResponseEntity.status(403).body("غير مصرح لك بإجراء الحجز. يجب أن يتم الحجز من خلال الموقع الرسمي فقط.");
             }
+
+            if (doctorId != null) {
+                Optional<Doctor> optDoc = doctorRepository.findById(doctorId);
+                if (optDoc.isPresent()) {
+                    appointment.setDoctorNationalId(optDoc.get().getNationalId());
+                    if (optDoc.get().getNameDoctor() != null) {
+                        appointment.setDoctorName(optDoc.get().getNameDoctor());
+                    }
+                }
+            }
+
             // تنظيف الأرقام القومية من أي مسافات
             if (appointment.getDoctorNationalId() != null)
                 appointment.setDoctorNationalId(appointment.getDoctorNationalId().trim());
@@ -156,7 +171,8 @@ public class AppointmentController {
             if (!workingHours.isEmpty()) {
                 String arabicDay = toArabicDay(appointment.getAppointmentDate().getDayOfWeek());
                 boolean isOffDay = workingHours.stream()
-                        .anyMatch(wh -> wh.getDayOfWeek().equals(arabicDay) && wh.isOff());
+                        .anyMatch(wh -> wh.getDayOfWeek().equals(arabicDay) && 
+                            (wh.isOff() || (wh.getStartTime().equals(LocalTime.MIDNIGHT) && wh.getEndTime().equals(LocalTime.MIDNIGHT))));
                 if (isOffDay) {
                     return ResponseEntity.badRequest().body(
                             "عفواً، الطبيب في إجازة يوم " + arabicDay + ". يرجى اختيار يوم عمل آخر."

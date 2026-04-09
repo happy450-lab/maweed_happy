@@ -1,6 +1,9 @@
 package com.example.demo;
 
 import com.example.demo.DTO.DoctorDTO;
+import com.example.demo.DTO.DoctorResponseDTO;
+import com.example.demo.DTO.DoctorPrivateDTO;
+import com.example.demo.DTO.AssistantResponseDTO;
 import com.example.demo.DTO.UserDTO;
 import com.example.demo.repository.DoctorRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +20,7 @@ import com.example.demo.repository.WorkingHourRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
 @RestController
@@ -132,39 +136,58 @@ public class DoctorController {
 
     /**
      * ✅ 5. عرض قائمة الأطباء للمراجعة
+     * 🔒 يرجع DoctorResponseDTO فقط — لا يكشف بيانات حساسة (password, activeToken, nationalId)
      */
     @GetMapping
-    public List<Doctor> getAllDoctors() {
-        return doctorRepository.findAll();
+    public List<DoctorResponseDTO> getAllDoctors() {
+        return doctorRepository.findByApprovedTrueAndEnabledTrue()
+                .stream()
+                .map(DoctorResponseDTO::from)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * ✅ 5.1 عرض أفضل 5 أطباء تقييماً للصفحة الرئيسية
+     */
+    @GetMapping("/top")
+    public List<DoctorResponseDTO> getTopDoctors() {
+        return doctorRepository.findTop5ByApprovedTrueAndEnabledTrueOrderByAverageRatingDesc()
+                .stream()
+                .map(DoctorResponseDTO::from)
+                .collect(Collectors.toList());
     }
 
     /**
      * ✅ 6. البحث عن طريق الكود الخاص
+     * 🔒 يرجع DoctorResponseDTO فقط — لا يكشف بيانات حساسة
      */
     @GetMapping("/search-by-code/{code}")
-    public ResponseEntity<Doctor> getDoctorByCode(@PathVariable String code) {
+    public ResponseEntity<DoctorResponseDTO> getDoctorByCode(@PathVariable String code) {
         return doctorRepository.findBySpecialAccessCode(code)
-                .map(doctor -> ResponseEntity.ok().body(doctor))
+                .map(doctor -> ResponseEntity.ok().body(DoctorResponseDTO.from(doctor)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
     /**
      * ✅ 7. جلب تفاصيل طبيب واحد بالـ ID
+     * 🔒 يرجع DoctorResponseDTO فقط
      */
     @GetMapping("/{id}")
-    public ResponseEntity<Doctor> getDoctorById(@PathVariable Long id) {
+    public ResponseEntity<DoctorResponseDTO> getDoctorById(@PathVariable Long id) {
         return doctorRepository.findById(id)
-                .map(doctor -> ResponseEntity.ok().body(doctor))
+                .map(doctor -> ResponseEntity.ok().body(DoctorResponseDTO.from(doctor)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
     /**
      * ✅ 7.1 جلب تفاصيل طبيب واحد بالرقم القومي
+     * 🔐 هذا الـ endpoint محمي بتوكن JWT — فقط للطبيب والمساعد
+     * يرجع DoctorPrivateDTO الذي يحتوي على specialAccessCode و phoneNumberDoctor
      */
     @GetMapping("/nationalId/{nationalId}")
-    public ResponseEntity<Doctor> getDoctorByNationalId(@PathVariable String nationalId) {
+    public ResponseEntity<DoctorPrivateDTO> getDoctorByNationalId(@PathVariable String nationalId) {
         return doctorRepository.findByNationalId(nationalId)
-                .map(doctor -> ResponseEntity.ok().body(doctor))
+                .map(doctor -> ResponseEntity.ok().body(DoctorPrivateDTO.from(doctor)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -227,10 +250,15 @@ public class DoctorController {
 
     /**
      * ✅ 10. عرض مساعدين الدكتور (للأطباء)
+     * 🔒 يرجع AssistantResponseDTO بدون activeToken
      */
     @GetMapping("/assistants/{doctorNationalId}")
-    public ResponseEntity<List<AssistantRequest>> getDoctorAssistants(@PathVariable String doctorNationalId) {
-        return ResponseEntity.ok(assistantRequestRepository.findByDoctorNationalId(doctorNationalId));
+    public ResponseEntity<List<AssistantResponseDTO>> getDoctorAssistants(@PathVariable String doctorNationalId) {
+        List<AssistantResponseDTO> result = assistantRequestRepository.findByDoctorNationalId(doctorNationalId)
+                .stream()
+                .map(AssistantResponseDTO::from)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
     }
 
     /**
