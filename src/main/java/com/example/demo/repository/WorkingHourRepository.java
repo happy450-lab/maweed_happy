@@ -9,5 +9,7 @@ import java.util.List;
 @Repository
 public interface WorkingHourRepository extends JpaRepository<WorkingHour, Long> {
     List<WorkingHour> findByDoctorNationalId(String nationalId);
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
     void deleteByDoctorNationalId(String nationalId);
 }

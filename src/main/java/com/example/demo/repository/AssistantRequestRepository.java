@@ -19,6 +19,8 @@ public interface AssistantRequestRepository extends JpaRepository<AssistantReque
     // لجلب طلبات أو مساعدين دكتور معين
     List<AssistantRequest> findByDoctorNationalId(String doctorNationalId);
 
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
     void deleteByDoctorNationalId(String doctorNationalId);
 
     // للتأكد إن الدكتور مبعتش نفس الطلب قبل كده لنفس الرقم القومي

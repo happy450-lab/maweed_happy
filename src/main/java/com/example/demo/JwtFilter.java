@@ -159,6 +159,7 @@ public class JwtFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // Admin endpoints are protected by AdminSecurityFilter — skip JWT for them
-        return request.getRequestURI().startsWith("/api/admin");
+        // Skip /error endpoints to prevent masking 500 errors as 403 Forbidden
+        return request.getRequestURI().startsWith("/api/admin") || request.getRequestURI().startsWith("/error");
     }
 }

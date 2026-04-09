@@ -9,5 +9,8 @@ import java.util.List;
 public interface PrescriptionRepository extends JpaRepository<Prescription, Long> {
     List<Prescription> findByPatientNationalId(String patientNationalId);
     List<Prescription> findByDoctorNationalId(String doctorNationalId);
+
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
     void deleteByDoctorNationalId(String doctorNationalId);
 }

@@ -16,6 +16,8 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     // جلب حجوزات الطبيب بناءً على الرقم القومي الخاص به
     List<Appointment> findByDoctorNationalId(String doctorNationalId);
 
+    @org.springframework.data.jpa.repository.Modifying
+    @org.springframework.transaction.annotation.Transactional
     void deleteByDoctorNationalId(String doctorNationalId);
 
 

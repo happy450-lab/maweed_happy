@@ -41,6 +41,7 @@ public class SecurityConfig {
                 .requestMatchers("/ws-maweed/**").permitAll()
 
                 .requestMatchers("/api/admin/**").permitAll() // يُدار بواسطة AdminSecurityFilter المستقل في Order(1)
+                .requestMatchers("/error").permitAll() // لعدم حجب أخطاء 500 وتحويلها لـ 403
                 
                 // 🔐 بقية الـ APIs تتطلب توكن JWT صالح
                 .anyRequest().authenticated()

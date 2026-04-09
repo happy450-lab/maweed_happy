@@ -113,7 +113,7 @@ public class DoctorService {
     /**
      * ✅ 4. قبول تسجيل الدكتور من الأدمن — يولد كود ويفعّل الحساب
      */
-    public String approveDoctorRegistration(String nationalId) {
+    public String approveDoctorRegistration(String nationalId, int months) {
         Doctor doctor = doctorRepository.findByNationalId(nationalId)
                 .orElseThrow(() -> new RuntimeException("لم يتم العثور على طبيب بهذا الرقم القومي"));
 
@@ -121,6 +121,11 @@ public class DoctorService {
         doctor.setSpecialAccessCode(code);
         doctor.setApproved(true);
         doctor.setEnabled(true);
+        
+        // Add subscription calculation
+        java.time.LocalDate newEndDate = java.time.LocalDate.now().plusMonths(months);
+        doctor.setSubscriptionEndDate(newEndDate.atStartOfDay());
+        
         doctorRepository.save(doctor);
 
         return code;

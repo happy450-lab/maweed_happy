@@ -102,9 +102,11 @@ public class AdminController {
      * ✅ قبول تسجيل دكتور — بيولد specialAccessCode ويفعّل الحساب
      */
     @PutMapping("/doctor-requests/{nationalId}/approve")
-    public ResponseEntity<?> approveDoctorRegistration(@PathVariable String nationalId) {
+    public ResponseEntity<?> approveDoctorRegistration(
+            @PathVariable String nationalId,
+            @RequestParam(defaultValue = "1") int months) {
         try {
-            String code = doctorService.approveDoctorRegistration(nationalId);
+            String code = doctorService.approveDoctorRegistration(nationalId, months);
             Map<String, String> response = new HashMap<>();
             response.put("message", "تم قبول الدكتور بنجاح");
             response.put("specialAccessCode", code);
