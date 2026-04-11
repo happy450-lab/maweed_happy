@@ -13,11 +13,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 🔐 JwtFilter — يفحص كل Request ويتحقق من التوكن
  * لو التوكن صحيح → يدخل الـ Security Context
  * لو غلط أو مافيش → يمر (الـ SecurityConfig هيقرر يرفض أو يقبل)
+ *
+ * ✅ يستخدم Token Cache (30 ثانية) لتقليل الـ DB queries المتكررة
  */
 @Component
 public class JwtFilter extends OncePerRequestFilter {
@@ -27,10 +31,10 @@ public class JwtFilter extends OncePerRequestFilter {
 
     @Autowired
     private com.example.demo.repository.UserRepository userRepository;
-    
+
     @Autowired
     private com.example.demo.repository.DoctorRepository doctorRepository;
-    
+
     @Autowired
     private com.example.demo.repository.AssistantRequestRepository assistantRepository;
 
@@ -38,6 +42,53 @@ public class JwtFilter extends OncePerRequestFilter {
         "http://localhost:3000",
         "https://maweed-ui.vercel.app"
     );
+
+    // ✅ Cache: token -> [isActive (0 or 1), expiryTimeMs]
+    // بيمنع تكرار الـ DB lookup لنفس التوكن خلال 30 ثانية
+    private static final Map<String, long[]> TOKEN_CACHE = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 30_000L; // 30 ثانية
+
+    private boolean isTokenActiveFromCache(String token, String nationalId, String role) {
+        long now = System.currentTimeMillis();
+
+        // إزالة الـ expired entries بشكل خفيف مع كل request
+        TOKEN_CACHE.entrySet().removeIf(e -> e.getValue()[1] < now);
+
+        // هل في cache لسه صالح؟
+        long[] cached = TOKEN_CACHE.get(token);
+        if (cached != null && cached[1] > now) {
+            return cached[0] == 1L;
+        }
+
+        // مش موجود في الـ cache — اسأل الـ DB مرة واحدة بس
+        boolean isActive = false;
+
+        if ("ROLE_PATIENT".equals(role)) {
+            var user = userRepository.findByNationalId(nationalId);
+            isActive = user.isPresent() && token.equals(user.get().getActiveToken());
+        } else if ("ROLE_DOCTOR".equals(role)) {
+            var doctor = doctorRepository.findByNationalId(nationalId);
+            isActive = doctor.isPresent() && token.equals(doctor.get().getActiveToken());
+        } else if ("ROLE_ACCOUNTANT".equals(role)) {
+            for (var a : assistantRepository.findByAssistantNationalId(nationalId)) {
+                if (token.equals(a.getActiveToken()) && "APPROVED".equals(a.getStatus())) {
+                    isActive = true;
+                    break;
+                }
+            }
+        }
+
+        // حفظ النتيجة في الـ cache لـ 30 ثانية
+        TOKEN_CACHE.put(token, new long[]{isActive ? 1L : 0L, now + CACHE_TTL_MS});
+        return isActive;
+    }
+
+    /**
+     * ✅ امسح التوكن من الـ cache فوراً (بعد logout أو تجديد الـ token)
+     */
+    public static void invalidateCachedToken(String token) {
+        if (token != null) TOKEN_CACHE.remove(token);
+    }
 
     private void banAccount(String nationalId, String role) {
         System.out.println("🚨🚨 حظر فوري للحساب: " + nationalId + " (دور: " + role + ") — محاولة تجاوز الموقع الرسمي!");
@@ -47,6 +98,7 @@ public class JwtFilter extends OncePerRequestFilter {
                     user.setEnabled(false);
                     user.setActiveToken(null);
                     userRepository.save(user);
+                    invalidateCachedToken(user.getActiveToken());
                 });
             } else if ("ROLE_DOCTOR".equals(role)) {
                 doctorRepository.findByNationalId(nationalId).ifPresent(doctor -> {
@@ -57,6 +109,7 @@ public class JwtFilter extends OncePerRequestFilter {
             } else if ("ROLE_ACCOUNTANT".equals(role)) {
                 assistantRepository.findByAssistantNationalId(nationalId).forEach(a -> {
                     if ("APPROVED".equals(a.getStatus())) {
+                        invalidateCachedToken(a.getActiveToken());
                         a.setActiveToken(null);
                         a.setStatus("REJECTED");
                         assistantRepository.save(a);
@@ -81,7 +134,7 @@ public class JwtFilter extends OncePerRequestFilter {
                 if (jwtUtil.isTokenValid(token)) {
                     String nationalId = jwtUtil.extractNationalId(token);
                     String role = jwtUtil.extractRole(token);
-                    
+
                     // 🚨 فحص المصدر
                     String origin = request.getHeader("Origin");
                     String referer = request.getHeader("Referer");
@@ -98,10 +151,8 @@ public class JwtFilter extends OncePerRequestFilter {
                                 break;
                             }
                         }
-                    } else {
-                        // لو مفيش خالص (Postman)
-                        isValidOrigin = false;
                     }
+                    // لو مفيش origin ولا referer (Postman) → isValidOrigin = false
 
                     if (!isWebSocket && !isValidOrigin) {
                         banAccount(nationalId, role);
@@ -109,31 +160,11 @@ public class JwtFilter extends OncePerRequestFilter {
                         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                         response.setContentType("application/json;charset=UTF-8");
                         response.getWriter().write("{\"error\":\"تم حظر حسابك لمحاولة الوصول غير المصرح بها.\"}");
-                        return; // وقف الـ request فوراً
+                        return;
                     }
-                    
-                    boolean isActive = false;
-                    
-                    if (role.equals("ROLE_PATIENT")) {
-                        var user = userRepository.findByNationalId(nationalId);
-                        if (user.isPresent() && token.equals(user.get().getActiveToken())) {
-                            isActive = true;
-                        }
-                    } else if (role.equals("ROLE_DOCTOR")) {
-                        var doctor = doctorRepository.findByNationalId(nationalId);
-                        // Doctor token requires checking both activeToken and if they have been approved
-                        if (doctor.isPresent() && token.equals(doctor.get().getActiveToken())) {
-                            isActive = true;
-                        }
-                    } else if (role.equals("ROLE_ACCOUNTANT")) {
-                        var assistants = assistantRepository.findByAssistantNationalId(nationalId);
-                        for (var a : assistants) {
-                            if (token.equals(a.getActiveToken()) && "APPROVED".equals(a.getStatus())) {
-                                isActive = true;
-                                break;
-                            }
-                        }
-                    }
+
+                    // ✅ استخدام الـ Cache — DB بيتكلم بس لو مش موجود في الـ cache
+                    boolean isActive = isTokenActiveFromCache(token, nationalId, role);
 
                     if (isActive) {
                         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
@@ -142,7 +173,6 @@ public class JwtFilter extends OncePerRequestFilter {
                         );
                         SecurityContextHolder.getContext().setAuthentication(auth);
                     } else {
-                        // توكن قديم (مكتوب فوقه بتسجيل دخول جديد)
                         System.out.println("🚨 قفل جلسة قديمة للرقم: " + nationalId);
                         SecurityContextHolder.clearContext();
                     }

@@ -69,4 +69,7 @@ public class Doctor {
 
     @Column(length = 500)
     private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
+
+    @Column(columnDefinition = "TEXT")
+    private String blockedDates = ""; // تواريخ استثنائية (إجازات طارئة) لمنع الحجز فيها
 }

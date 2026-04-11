@@ -43,4 +43,8 @@ public class Appointment {
 
     @Column(columnDefinition = "boolean default false")
     private Boolean isReviewed = false;
+
+    // ✅ علم التذكير — عشان السيرفر مابعتش الإشعار أكتر من مرة
+    @Column(columnDefinition = "boolean default false")
+    private Boolean reminderSent = false;
 }

@@ -125,8 +125,13 @@ public class AdminController {
         if (doctorOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
-        doctorRepository.delete(doctorOpt.get());
-        return ResponseEntity.ok("تم رفض وحذف طلب تسجيل الدكتور");
+        
+        try {
+            doctorService.deleteDoctorCompletely(nationalId);
+            return ResponseEntity.ok("تم رفض وحذف طلب تسجيل الدكتور");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("تعذر الحذف: " + e.getMessage());
+        }
     }
 
     /**

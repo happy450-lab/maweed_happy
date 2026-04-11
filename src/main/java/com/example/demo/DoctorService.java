@@ -19,6 +19,13 @@ import com.example.demo.repository.PrescriptionRepository;
 import com.example.demo.repository.AssistantRequestRepository;
 
 import java.util.List;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.LocalDateTime;
+import java.time.DayOfWeek;
+import java.util.Map;
+import java.util.HashMap;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 @Service
 @Data
@@ -38,6 +45,12 @@ public class DoctorService {
 
     @Autowired
     private AssistantRequestRepository assistantRequestRepository;
+
+    @Autowired
+    private PushNotificationService pushNotificationService;
+
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
     // حروف وأرقام عشوائية لتوليد الكود
     private static final String CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -271,5 +284,143 @@ public class DoctorService {
 
         // Finally, delete the doctor record itself
         doctorRepository.delete(doctor);
+    }
+
+    private String toArabicDay(DayOfWeek dow) {
+        switch (dow) {
+            case SATURDAY:  return "السبت";
+            case SUNDAY:    return "الأحد";
+            case MONDAY:    return "الاثنين";
+            case TUESDAY:   return "الثلاثاء";
+            case WEDNESDAY: return "الأربعاء";
+            case THURSDAY:  return "الخميس";
+            case FRIDAY:    return "الجمعة";
+            default:        return "";
+        }
+    }
+
+    /**
+     * ✅ خوارزمية الترحيل المتتالي (Cascading Queue Rebuild)
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public int applySuddenHoliday(String nationalId, LocalDate offDate) {
+        // 1. جلب بيانات الطبيب وساعات العمل
+        Doctor doctor = doctorRepository.findByNationalId(nationalId).orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
+        List<WorkingHour> workingHours = workingHourRepository.findByDoctorNationalId(nationalId);
+        if (workingHours == null || workingHours.isEmpty()) {
+            throw new RuntimeException("الطبيب ليس لديه ساعات عمل مسجلة لإنشاء الحجوزات.");
+        }
+        
+        // 1.5 تسجيل اليوم كإجازة استثنائية لمنع أي حجز جديد فيه
+        String offDateStr = offDate.toString();
+        if (doctor.getBlockedDates() == null) {
+            doctor.setBlockedDates(offDateStr);
+        } else if (!doctor.getBlockedDates().contains(offDateStr)) {
+            doctor.setBlockedDates(doctor.getBlockedDates() + "," + offDateStr);
+        }
+        doctorRepository.save(doctor);
+        
+        Map<String, WorkingHour> whMap = new HashMap<>();
+        for (WorkingHour wh : workingHours) {
+            whMap.put(wh.getDayOfWeek(), wh);
+        }
+
+        // 2. جلب كافة المواعيد PENDING من offDate وما بعده مرتبة حسب التاريخ والوقت
+        List<Appointment> pendingQueue = appointmentRepository.findPendingAppointmentsFromDate(nationalId, offDate);
+        if (pendingQueue.isEmpty()) {
+            return 0; // لا يوجد مواعيد للترحيل
+        }
+
+        // 3. تجهيز الـ Cursor لبدء الترحيل من اليوم التالي للإجازة المفاجئة
+        LocalDate cursorDate = offDate.plusDays(1);
+        
+        // إيجاد أول يوم عمل بعد يوم الإجازة لاستخدامه كنقطة بداية (تخطي أيام الإجازات)
+        WorkingHour currentWh = whMap.get(toArabicDay(cursorDate.getDayOfWeek()));
+        while (currentWh == null || currentWh.isOff() || (currentWh.getStartTime().equals(LocalTime.MIDNIGHT) && currentWh.getEndTime().equals(LocalTime.MIDNIGHT))) {
+            cursorDate = cursorDate.plusDays(1);
+            currentWh = whMap.get(toArabicDay(cursorDate.getDayOfWeek()));
+        }
+
+        LocalTime cursorTime = currentWh.getStartTime();
+        int slotCount = 0; // مرضى في نفس الـ 20 دقيقة (Max 2)
+
+        // 4. المرور على كافة المواعيد في المستقبل وإعادة تسكينها بالترتيب (Shift Forward)
+        for (Appointment app : pendingQueue) {
+            LocalDateTime originalDateTime = LocalDateTime.of(app.getAppointmentDate(), app.getAppointmentTime());
+            LocalDateTime cursorDateTime = LocalDateTime.of(cursorDate, cursorTime);
+
+            // نأخذ الأكبر دائماَ (لا يمكن إرجاع أي ميعاد للخلف)
+            if (originalDateTime.isAfter(cursorDateTime)) {
+                cursorDate = app.getAppointmentDate();
+                cursorTime = app.getAppointmentTime();
+                slotCount = 0;
+            }
+
+            // التحقق من تجاوز ساعات العمل أو الوقوع في يوم إجازة للدكتور
+            boolean slotValid = false;
+            int safetyLimit = 0; // عداد حماية من اللوب اللانهائي
+            while (!slotValid && safetyLimit < 365) {
+                safetyLimit++;
+                WorkingHour wh = whMap.get(toArabicDay(cursorDate.getDayOfWeek()));
+                boolean isOffDay = wh == null || wh.isOff() || 
+                    (wh.getStartTime().equals(LocalTime.MIDNIGHT) && wh.getEndTime().equals(LocalTime.MIDNIGHT));
+
+                if (isOffDay) {
+                    // انتقل لليوم التالي وابدأ من أول ساعة عمل فيه
+                    cursorDate = cursorDate.plusDays(1);
+                    cursorTime = LocalTime.MIDNIGHT; // placeholder — سيتم تحديثه في الدورة التالية
+                    slotCount = 0;
+                    WorkingHour nextWh = whMap.get(toArabicDay(cursorDate.getDayOfWeek()));
+                    if (nextWh != null && !nextWh.isOff() && !nextWh.getStartTime().equals(LocalTime.MIDNIGHT)) {
+                        cursorTime = nextWh.getStartTime();
+                    }
+                } else if (cursorTime.equals(LocalTime.MIDNIGHT) || cursorTime.isBefore(wh.getStartTime())) {
+                    // الـ cursorTime قبل بداية الدوام، نضبطه لبداية الدوام
+                    cursorTime = wh.getStartTime();
+                    slotCount = 0;
+                } else if (cursorTime.isAfter(wh.getEndTime()) || cursorTime.equals(wh.getEndTime()) || cursorTime.plusMinutes(20).isAfter(wh.getEndTime())) {
+                    // تجاوز ساعات العمل، ننتقل لليوم التالي
+                    cursorDate = cursorDate.plusDays(1);
+                    cursorTime = LocalTime.MIDNIGHT; // placeholder
+                    slotCount = 0;
+                    WorkingHour nextWh = whMap.get(toArabicDay(cursorDate.getDayOfWeek()));
+                    if (nextWh != null && !nextWh.isOff() && !nextWh.getStartTime().equals(LocalTime.MIDNIGHT)) {
+                        cursorTime = nextWh.getStartTime();
+                    }
+                } else {
+                    slotValid = true; // وجدنا وقت صحيح داخل ساعات العمل
+                }
+            }
+
+            // تحديث الميعاد
+            app.setAppointmentDate(cursorDate);
+            app.setAppointmentTime(cursorTime);
+
+            // تحديث الـ Cursor
+            slotCount++;
+            if (slotCount >= 2) { // 2 مرضى لكل 20 دقيقة
+                cursorTime = cursorTime.plusMinutes(20);
+                slotCount = 0;
+            }
+        }
+
+        // 5. حفظ كافة المواعيد المحدثة
+        appointmentRepository.saveAll(pendingQueue);
+
+        // 6. إرسال Push Notifications للمرضى المٌتأثرين وبث التغييرات للفرونت إند (WebSocket)
+        for (Appointment app : pendingQueue) {
+            try {
+                pushNotificationService.sendToUser(
+                    app.getPatientNationalId(),
+                    "📅 تعديل ميعاد الحجز",
+                    "عذراً، لظروف طارئة لطبيبك تم تأجيل موعدك ليكون يوم " + app.getAppointmentDate() + " الساعة " + app.getAppointmentTime() + ". يمكنك مراجعة العيادة في حال التعارض."
+                );
+            } catch (Exception e) {
+                System.err.println("خطأ أثناء الإرسال: " + e.getMessage());
+            }
+        }
+        
+        messagingTemplate.convertAndSend("/topic/appointments/" + nationalId, "UPDATE_APPOINTMENT");
+        return pendingQueue.size();
     }
 }

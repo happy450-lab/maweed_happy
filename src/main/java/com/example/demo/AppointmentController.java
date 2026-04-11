@@ -37,6 +37,9 @@ public class AppointmentController {
     @Autowired
     private DoctorRepository doctorRepository;
 
+    @Autowired
+    private PushNotificationService pushNotificationService;
+
     // الحد الأقصى للوقت بين الحجوزات (20 دقيقة)
     private static final int MIN_GAP_MINUTES = 20;
 
@@ -167,6 +170,15 @@ public class AppointmentController {
 
             // 3. فحص أيام الإجازة: تأكد أن اليوم المختار ليس يوم إجازة للدكتور
             String doctorNatId = appointment.getDoctorNationalId();
+            
+            // تحقق أولاً من الإجازات الطارئة (الاستثنائية)
+            Optional<Doctor> checkDoctorOpt = doctorRepository.findByNationalId(doctorNatId);
+            if (checkDoctorOpt.isPresent() && checkDoctorOpt.get().getBlockedDates() != null) {
+                if (checkDoctorOpt.get().getBlockedDates().contains(appointment.getAppointmentDate().toString())) {
+                    return ResponseEntity.badRequest().body("عفواً، الطبيب في إجازة طارئة يوم " + appointment.getAppointmentDate() + ". يرجى اختيار يوم آخر.");
+                }
+            }
+
             List<WorkingHour> workingHours = workingHourRepository.findByDoctorNationalId(doctorNatId);
             if (!workingHours.isEmpty()) {
                 String arabicDay = toArabicDay(appointment.getAppointmentDate().getDayOfWeek());
@@ -175,7 +187,7 @@ public class AppointmentController {
                             (wh.isOff() || (wh.getStartTime().equals(LocalTime.MIDNIGHT) && wh.getEndTime().equals(LocalTime.MIDNIGHT))));
                 if (isOffDay) {
                     return ResponseEntity.badRequest().body(
-                            "عفواً، الطبيب في إجازة يوم " + arabicDay + ". يرجى اختيار يوم عمل آخر."
+                            "عفواً، الطبيب في إجازة أسبوعية يوم " + arabicDay + ". يرجى اختيار يوم عمل آخر."
                     );
                 }
             }
@@ -263,6 +275,29 @@ public class AppointmentController {
                     // بث التحديث عبر الـ WebSocket
                     messagingTemplate.convertAndSend("/topic/appointments/" + appointment.getDoctorNationalId(), "UPDATE_APPOINTMENT");
 
+                    // 🔔 إرسال إشعار للمريض عند الحضور (DONE) أو الإلغاء/الرفض (REJECTED/NO_SHOW)
+                    if (upperStatus.equals("DONE")) {
+                        try {
+                            pushNotificationService.sendToUser(
+                                appointment.getPatientNationalId(),
+                                "✅ إتمام الكشف",
+                                "تم إتمام الكشف بنجاح مع د. " + appointment.getDoctorName() + ". نتمنى لك الشفاء العاجل!"
+                            );
+                        } catch(Exception e) {
+                            System.err.println("خطأ أثناء إرسال الإشعار: " + e.getMessage());
+                        }
+                    } else if (upperStatus.equals("REJECTED") || upperStatus.equals("NO_SHOW")) {
+                        try {
+                            pushNotificationService.sendToUser(
+                                appointment.getPatientNationalId(),
+                                "❌ تم إلغاء موعدك",
+                                "عفواً، تم إغلاق أو إلغاء موعدك مع د. " + appointment.getDoctorName() + " يوم " + appointment.getAppointmentDate() + "."
+                            );
+                        } catch(Exception e) {
+                            System.err.println("خطأ أثناء إرسال الإشعار: " + e.getMessage());
+                        }
+                    }
+
                     return ResponseEntity.ok(appointment);
                 } else {
                     return ResponseEntity.badRequest().body("حالة الحجز غير مدعومة");
@@ -289,6 +324,17 @@ public class AppointmentController {
             }
             if ("ROLE_DOCTOR".equals(curRole) && !apartmentNationalIdMatchesDoctor(appointment, curUser)) {
                 return ResponseEntity.status(403).body("لا يمكنك حذف حجز لا يخصك.");
+            }
+
+            // إرسال إشعار للمريض قبل الحذف
+            try {
+                pushNotificationService.sendToUser(
+                    appointment.getPatientNationalId(),
+                    "❌ تم إلغاء الحجز",
+                    "تم إلغاء حجزك مع د. " + appointment.getDoctorName() + " يوم " + appointment.getAppointmentDate() + ". يرجى التواصل أو حجز موعد بديل."
+                );
+            } catch(Exception e) {
+                System.err.println("خطأ أثناء إرسال الإشعار قبل الحذف: " + e.getMessage());
             }
 
             appointmentRepository.deleteById(id);

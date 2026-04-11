@@ -39,5 +39,19 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );
-}
 
+    // ✅ جلب المواعيد اللي محتاجة تذكير (اللي ميعادها في نافذة الـ 20 دقيقة الجاية)
+    @Query("SELECT a FROM Appointment a WHERE a.appointmentDate = :date AND a.appointmentTime >= :fromTime AND a.appointmentTime <= :toTime AND a.status = 'PENDING' AND a.reminderSent = false")
+    List<Appointment> findRemindersToSend(
+            @Param("date") LocalDate date,
+            @Param("fromTime") LocalTime fromTime,
+            @Param("toTime") LocalTime toTime
+    );
+
+    // ✅ جلب الحجوزات المستقبلية المراد ترحيلها
+    @Query("SELECT a FROM Appointment a WHERE a.doctorNationalId = :doctorNationalId AND a.appointmentDate >= :startDate AND a.status NOT IN ('DONE', 'REJECTED', 'CANCELLED', 'NO_SHOW') ORDER BY a.appointmentDate ASC, a.appointmentTime ASC")
+    List<Appointment> findPendingAppointmentsFromDate(
+            @Param("doctorNationalId") String doctorNationalId,
+            @Param("startDate") LocalDate startDate
+    );
+}
