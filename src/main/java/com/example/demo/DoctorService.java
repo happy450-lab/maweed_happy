@@ -404,10 +404,17 @@ public class DoctorService {
             }
         }
 
-        // 5. حفظ كافة المواعيد المحدثة
-        appointmentRepository.saveAll(pendingQueue);
+        // 5. حفظ كافة المواعيد المحدثة (منفصل ومحمي)
+        try {
+            appointmentRepository.saveAll(pendingQueue);
+        } catch (Exception saveEx) {
+            System.err.println("خطأ أثناء حفظ المواعيد: " + saveEx.getMessage());
+            throw saveEx; // نعيد الإلقاء عشان الـ @Transactional يشتغل
+        }
 
-        // 6. إرسال Push Notifications للمرضى المٌتأثرين وبث التغييرات للفرونت إند (WebSocket)
+        int savedCount = pendingQueue.size();
+        
+        // 6. إرسال Push Notifications للمرضى المٌتأثرين (لا يؤثر فشله على الـ Transaction)
         for (Appointment app : pendingQueue) {
             try {
                 pushNotificationService.sendToUser(
@@ -416,11 +423,18 @@ public class DoctorService {
                     "عذراً، لظروف طارئة لطبيبك تم تأجيل موعدك ليكون يوم " + app.getAppointmentDate() + " الساعة " + app.getAppointmentTime() + ". يمكنك مراجعة العيادة في حال التعارض."
                 );
             } catch (Exception e) {
-                System.err.println("خطأ أثناء الإرسال: " + e.getMessage());
+                // Push Notification فشلت — نكمل بدونها
+                System.err.println("خطأ أثناء إرسال الإشعار للمريض " + app.getPatientNationalId() + ": " + e.getMessage());
             }
         }
         
-        messagingTemplate.convertAndSend("/topic/appointments/" + nationalId, "UPDATE_APPOINTMENT");
-        return pendingQueue.size();
+        // 7. إخبار الفرونت إند عبر WebSocket
+        try {
+            messagingTemplate.convertAndSend("/topic/appointments/" + nationalId, "UPDATE_APPOINTMENT");
+        } catch (Exception wsEx) {
+            System.err.println("خطأ WebSocket: " + wsEx.getMessage());
+        }
+        
+        return savedCount;
     }
 }
