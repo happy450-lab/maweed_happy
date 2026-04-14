@@ -41,6 +41,8 @@ public class SecurityConfig {
                 .requestMatchers("/ws-maweed/**").permitAll()
 
                 .requestMatchers("/api/admin/**").permitAll() // يُدار بواسطة AdminSecurityFilter المستقل في Order(1)
+                .requestMatchers(HttpMethod.GET, "/api/reviews/recent-high").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/doctors/top").permitAll()
                 .requestMatchers("/error").permitAll() // لعدم حجب أخطاء 500 وتحويلها لـ 403
                 
                 // 🔐 بقية الـ APIs تتطلب توكن JWT صالح
@@ -58,7 +60,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:3000", "https://maweed-ui.vercel.app"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "x-national-id"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
