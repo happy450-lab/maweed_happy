@@ -41,6 +41,18 @@ public class User {
     @JsonProperty("doctorNationalId") 
     private String doctorNationalId; // الحقل ده مش بيتحفظ في الداتابيز،بنستخدمه بس للرد على اللوجن للمساعدين
 
+    // -- Medical Profile Data --
+    private String bloodType;
+    private Double weight;
+    private Double height;
+    private Integer age;
+    
+    @Column(length = 1000)
+    private String chronicDiseases;
+    
+    @Column(length = 1000)
+    private String allergies;
+
     @Column(length = 500)
     private String activeToken; // تتبع الجلسة الحالية لمنع الدخول المتعدد
 }

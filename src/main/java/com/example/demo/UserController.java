@@ -144,4 +144,37 @@ public class UserController {
 
         return ResponseEntity.ok("تم تسجيل الخروج بنجاح.");
     }
+
+    /**
+     * ✅ جلب الملف الطبي للمريض عن طريق الرقم القومي
+     */
+    @GetMapping("/profile/{nationalId}")
+    public ResponseEntity<?> getUserProfile(@PathVariable String nationalId) {
+        java.util.Optional<User> userOptional = userRepository.findByNationalId(nationalId);
+        if (userOptional.isPresent()) {
+            return ResponseEntity.ok(UserResponseDTO.from(userOptional.get()));
+        }
+        return ResponseEntity.status(404).body("المريض غير موجود");
+    }
+
+    /**
+     * ✅ تحديث الملف الطبي للمريض
+     */
+    @PutMapping("/profile/{nationalId}")
+    public ResponseEntity<?> updateUserProfile(@PathVariable String nationalId, @RequestBody com.example.demo.DTO.UserProfileDTO profileDTO) {
+        java.util.Optional<User> userOptional = userRepository.findByNationalId(nationalId);
+        if (userOptional.isPresent()) {
+            User user = userOptional.get();
+            user.setBloodType(profileDTO.getBloodType());
+            user.setWeight(profileDTO.getWeight());
+            user.setHeight(profileDTO.getHeight());
+            user.setAge(profileDTO.getAge());
+            user.setChronicDiseases(profileDTO.getChronicDiseases());
+            user.setAllergies(profileDTO.getAllergies());
+            
+            userRepository.save(user);
+            return ResponseEntity.ok(UserResponseDTO.from(user));
+        }
+        return ResponseEntity.status(404).body("المريض غير موجود");
+    }
 }

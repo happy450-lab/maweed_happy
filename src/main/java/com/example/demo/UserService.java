@@ -25,6 +25,9 @@ public class UserService {
     @Autowired
     private JwtUtil jwtUtil;
 
+    @Autowired
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
     public User registerPatient(UserDTO dto) {
         validateBasicData(dto.getFullName(), dto.getNationalId(), dto.getPhoneNumber());
 
@@ -36,7 +39,7 @@ public class UserService {
         user.setFullName(dto.getFullName().trim());
         user.setNationalId(dto.getNationalId().trim());
         user.setPhoneNumber(dto.getPhoneNumber().trim());
-        user.setPassword(dto.getPassword());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
         user.setRole(Role.ROLE_PATIENT);
 
         return userRepository.save(user);
@@ -113,7 +116,25 @@ public class UserService {
         Optional<User> patient = userRepository.findByNationalId(nationalId);
         if (patient.isPresent()) {
             User u = patient.get();
-            if (password != null && password.equals(u.getPassword())) {
+            boolean isPasswordMatch = false;
+
+            if (password != null && u.getPassword() != null) {
+                if (u.getPassword().startsWith("$2a$") || u.getPassword().startsWith("$2b$")) {
+                    // Password is hashed with BCrypt
+                    isPasswordMatch = passwordEncoder.matches(password, u.getPassword());
+                } else {
+                    // Legacy plain text check
+                    if (password.equals(u.getPassword())) {
+                        isPasswordMatch = true;
+                        // 🔒 Auto-upgrade legacy password to BCrypt
+                        u.setPassword(passwordEncoder.encode(password));
+                        userRepository.save(u);
+                        System.out.println("🔒 Upgraded legacy plaintext password to BCrypt for patient: " + nationalId);
+                    }
+                }
+            }
+
+            if (isPasswordMatch) {
                 System.out.println("Login success: PATIENT -> " + u.getFullName());
                 
                 checkConcurrentLogin(u.getActiveToken());

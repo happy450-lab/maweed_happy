@@ -21,6 +21,14 @@ public class UserResponseDTO {
     private boolean enabled;
     private LocalDateTime createDate;
     private int noShowCount;
+    
+    // Medical Profile
+    private String bloodType;
+    private Double weight;
+    private Double height;
+    private Integer age;
+    private String chronicDiseases;
+    private String allergies;
 
     /**
      * Factory method لتحويل كيان User إلى DTO آمن
@@ -35,6 +43,14 @@ public class UserResponseDTO {
         dto.setEnabled(user.isEnabled());
         dto.setCreateDate(user.getCreateDate());
         dto.setNoShowCount(user.getNoShowCount());
+        
+        dto.setBloodType(user.getBloodType());
+        dto.setWeight(user.getWeight());
+        dto.setHeight(user.getHeight());
+        dto.setAge(user.getAge());
+        dto.setChronicDiseases(user.getChronicDiseases());
+        dto.setAllergies(user.getAllergies());
+        
         return dto;
     }
 }
