@@ -11,4 +11,5 @@ public class UpdateProfileDTO {
     private String googleMapsLink;
     private String aboutDoctor;
     private String qualifications;
+    private String clinicPhone;
 }

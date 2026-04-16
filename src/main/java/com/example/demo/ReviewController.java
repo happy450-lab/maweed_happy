@@ -33,8 +33,16 @@ public class ReviewController {
      */
     @GetMapping("/recent-high")
     public ResponseEntity<List<Review>> getRecentHighReviews() {
-        // نجلب التعليقات اللي تقييمها 4 وأكتر
         List<Review> reviews = reviewRepository.findTop10ByRatingGreaterThanEqualOrderByCreatedAtDesc(4);
+        return ResponseEntity.ok(reviews);
+    }
+
+    /**
+     * جلب أحدث 10 تعليقات بدون فلتر للعرض في داشبورد اليوزر
+     */
+    @GetMapping("/recent")
+    public ResponseEntity<List<Review>> getRecentReviews() {
+        List<Review> reviews = reviewRepository.findTop10ByOrderByCreatedAtDesc();
         return ResponseEntity.ok(reviews);
     }
 

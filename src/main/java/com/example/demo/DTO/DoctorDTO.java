@@ -11,6 +11,8 @@ public class DoctorDTO {
     private String specialization;
     @Column(nullable = false, unique = true, length = 20)
     private String  specialAccessCode;
+    
+    private String clinicPhone;
 
     private String aboutDoctor;
     private String qualifications;

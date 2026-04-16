@@ -29,6 +29,9 @@ public class Doctor {
     @Column(name = "doctor_certificate")
     private String doctorCertificate;
     
+    @Column(length = 20)
+    private String clinicPhone;
+
     // Default password to satisfy existing NOT NULL database constraints without using the frontend
     @Column(nullable = false)
     private String password = "N/A";

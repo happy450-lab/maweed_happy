@@ -22,6 +22,7 @@ public class DoctorPrivateDTO {
     private String googleMapsLink;
     private String aboutDoctor;
     private String qualifications;
+    private String clinicPhone;
     private String specialAccessCode;    // ✅ مطلوب للمساعد (QR Code)
     private String phoneNumberDoctor;    // ✅ مطلوب للتواصل الداخلي
     private Double checkupPrice;
@@ -44,6 +45,7 @@ public class DoctorPrivateDTO {
         dto.setGoogleMapsLink(doctor.getGoogleMapsLink());
         dto.setAboutDoctor(doctor.getAboutDoctor());
         dto.setQualifications(doctor.getQualifications());
+        dto.setClinicPhone(doctor.getClinicPhone());
         dto.setSpecialAccessCode(doctor.getSpecialAccessCode());
         dto.setPhoneNumberDoctor(doctor.getPhoneNumberDoctor());
         dto.setCheckupPrice(doctor.getCheckupPrice());

@@ -1,6 +1,7 @@
 package com.example.demo;
 
 import com.example.demo.DTO.DoctorDTO;
+import com.example.demo.domain.AssistantRequest;
 import com.example.demo.repository.DoctorRepository;
 import lombok.Data;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -175,18 +176,29 @@ public class DoctorService {
         if (dto.getGoogleMapsLink() != null) doctor.setGoogleMapsLink(dto.getGoogleMapsLink());
         if (dto.getAboutDoctor() != null) doctor.setAboutDoctor(dto.getAboutDoctor());
         if (dto.getQualifications() != null) doctor.setQualifications(dto.getQualifications());
+        if (dto.getClinicPhone() != null) doctor.setClinicPhone(dto.getClinicPhone());
 
         return doctorRepository.save(doctor);
     }
 
     /**
      * ✅ 7. تغيير كود التفعيل بواسطة الطبيب نفسه
+     * يقوم أيضاً بتحديث باسورد الدخول الخاص بالمساعدين الملحقين بهذا الطبيب ليعملوا بنفس الكود
      */
+    @org.springframework.transaction.annotation.Transactional
     public Doctor updateAccessCode(String nationalId, String newCode) {
         Doctor doctor = doctorRepository.findByNationalId(nationalId)
                 .orElseThrow(() -> new RuntimeException("الطبيب غير موجود"));
 
         doctor.setSpecialAccessCode(newCode);
+        
+        // 🔄 مزامنة الكود الجديد لجميع المساعدين حتى لا يفقدوا حساباتهم
+        List<AssistantRequest> assistants = assistantRequestRepository.findByDoctorNationalId(nationalId);
+        for (AssistantRequest assistant : assistants) {
+            assistant.setDoctorCode(newCode);
+        }
+        assistantRequestRepository.saveAll(assistants);
+
         return doctorRepository.save(doctor);
     }
 

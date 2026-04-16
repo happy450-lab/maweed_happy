@@ -21,6 +21,7 @@ public class DoctorResponseDTO {
     private String googleMapsLink;
     private String aboutDoctor;
     private String qualifications;
+    private String clinicPhone;
     // 🔒 specialAccessCode و phoneNumberDoctor محذوفان من الـ public response
     // بيتوجدا في DoctorPrivateDTO بس، للمستخدمين المصادق عليهم
     private Double checkupPrice;
@@ -42,6 +43,7 @@ public class DoctorResponseDTO {
         dto.setGoogleMapsLink(doctor.getGoogleMapsLink());
         dto.setAboutDoctor(doctor.getAboutDoctor());
         dto.setQualifications(doctor.getQualifications());
+        dto.setClinicPhone(doctor.getClinicPhone());
         // 🔒 محذوفان عن عمد: specialAccessCode و phoneNumberDoctor
         dto.setCheckupPrice(doctor.getCheckupPrice());
         dto.setRecheckPrice(doctor.getRecheckPrice());

@@ -5,6 +5,9 @@ import com.example.demo.repository.AssistantRequestRepository;
 import com.example.demo.repository.DoctorRepository;
 import com.example.demo.DTO.DoctorAdminDTO;
 import com.example.demo.DTO.AssistantResponseDTO;
+import com.example.demo.repository.ReviewRepository;
+import com.example.demo.domain.Review;
+import org.springframework.data.domain.Sort;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -29,6 +32,9 @@ public class AdminController {
 
     @Autowired
     private DoctorService doctorService;
+
+    @Autowired
+    private ReviewRepository reviewRepository;
 
     // ═══════════════════════════════════════════════
     // 🔔 NOTIFICATION BADGE — عدد الطلبات المعلقة
@@ -243,5 +249,30 @@ public class AdminController {
         }
         assistantRequestRepository.deleteById(id);
         return ResponseEntity.ok("تم حذف الطلب بنجاح");
+    }
+
+    // ═══════════════════════════════════════════════
+    // 💬 REVIEWS / COMMENTS
+    // ═══════════════════════════════════════════════
+
+    /**
+     * ✅ جلب كل التعليقات (للمدير)
+     */
+    @GetMapping("/reviews")
+    public ResponseEntity<List<Review>> getAllReviews() {
+        List<Review> reviews = reviewRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt"));
+        return ResponseEntity.ok(reviews);
+    }
+
+    /**
+     * ✅ حذف تعليق معين أو مسيء
+     */
+    @DeleteMapping("/reviews/{id}")
+    public ResponseEntity<?> deleteReview(@PathVariable Long id) {
+        if (!reviewRepository.existsById(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        reviewRepository.deleteById(id);
+        return ResponseEntity.ok("تم حذف التعليق بنجاح");
     }
 }
