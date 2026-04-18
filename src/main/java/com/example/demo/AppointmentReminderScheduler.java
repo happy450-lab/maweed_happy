@@ -12,6 +12,7 @@ import java.util.List;
 /**
  * ✅ AppointmentReminderScheduler
  * بيشتغل كل دقيقة ويبعت تذكير للمرضى اللي موعدهم بعد 20 دقيقة
+ * عبر Web Push
  */
 @Component
 public class AppointmentReminderScheduler {
@@ -31,7 +32,6 @@ public class AppointmentReminderScheduler {
         LocalTime from = now.plusMinutes(19);
         LocalTime to   = now.plusMinutes(21);
 
-        // جيب المواعيد اللي في النافذة دي ولسه ماتبعتلهاش تذكير
         List<com.example.demo.Appointment> upcoming =
             appointmentRepository.findRemindersToSend(today, from, to);
 
@@ -43,16 +43,16 @@ public class AppointmentReminderScheduler {
                 String ampm = h < 12 ? "ص" : "م";
                 int h12 = h == 0 ? 12 : h > 12 ? h - 12 : h;
                 String timeStr = String.format("%d:%02d %s", h12, m, ampm);
+                String title   = "⏰ تذكير: موعدك بعد 20 دقيقة!";
+                String body    = "موعدك مع " + appt.getDoctorName() + " الساعة " + timeStr;
 
-                pushService.sendToUser(
-                    appt.getPatientNationalId(),
-                    "⏰ تذكير: موعدك بعد 20 دقيقة!",
-                    "موعدك مع " + appt.getDoctorName() + " الساعة " + timeStr
-                );
+                // Web Push (للمتصفح)
+                pushService.sendToUser(appt.getPatientNationalId(), title, body);
 
                 // ضع علامة إن الرسالة اتبعتت
                 appt.setReminderSent(true);
                 appointmentRepository.save(appt);
+                System.out.println("✅ Reminder sent (Push) to: " + appt.getPatientNationalId());
 
             } catch (Exception e) {
                 System.err.println("⚠️ خطأ في إرسال تذكير الموعد: " + e.getMessage());

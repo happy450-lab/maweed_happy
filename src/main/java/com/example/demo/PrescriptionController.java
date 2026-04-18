@@ -1,10 +1,10 @@
 package com.example.demo;
 
-import com.example.demo.Prescription;
 import com.example.demo.repository.PrescriptionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
 
 @RestController
@@ -15,10 +15,27 @@ public class PrescriptionController {
     @Autowired
     private PrescriptionRepository prescriptionRepository;
 
+    @Autowired
+    private PushNotificationService pushNotificationService;
+
     @PostMapping
     public ResponseEntity<?> createPrescription(@RequestBody Prescription prescription) {
         try {
             Prescription saved = prescriptionRepository.save(prescription);
+
+            // ✅ إرسال إشعار Web Push (من بره) للمريض
+            if (saved.getPatientNationalId() != null) {
+                try {
+                    pushNotificationService.sendToUser(
+                        saved.getPatientNationalId(),
+                        "💊 تم إضافة روشتة جديدة",
+                        "قام الطبيب " + saved.getDoctorName() + " بكتابة روشتة طبية جديدة لك. يرجى مراجعة حجوزاتك."
+                    );
+                } catch (Exception e) {
+                    System.err.println("فشل إرسال إشعار الروشتة للمريض: " + e.getMessage());
+                }
+            }
+
             return ResponseEntity.ok(saved);
         } catch (Exception e) {
             System.err.println("Error saving prescription: " + e.getMessage());
