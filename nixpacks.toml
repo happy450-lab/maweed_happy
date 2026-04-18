@@ -6,5 +6,14 @@ nixPkgs = ["jdk21", "maven"]
 [phases.build]
 cmds = ["mvn clean package -DskipTests"]
 
+# ✅ Build-time placeholders for env vars that are referenced during compilation
+# الـ JWT_SECRET الحقيقي بييجي من Railway Variables وقت الـ runtime
+[variables]
+JWT_SECRET = "build-time-placeholder-not-used"
+ADMIN_SECRET_TOKEN = "build-time-placeholder"
+SPRING_DATASOURCE_URL = "jdbc:postgresql://localhost:5432/placeholder"
+SPRING_DATASOURCE_USERNAME = "postgres"
+SPRING_DATASOURCE_PASSWORD = "placeholder"
+
 [start]
 cmd = "java -Xms64m -Xmx300m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -Djava.security.egd=file:/dev/./urandom -jar target/*.jar --spring.profiles.active=railway --server.port=$PORT"
