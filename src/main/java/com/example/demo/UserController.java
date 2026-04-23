@@ -52,21 +52,28 @@ public class UserController {
     /** 🔐 فحص الحد وزيادة العداد (atomic) */
     private static final int MAX_ACCOUNTS_PER_IP = 5;
 
-    private synchronized boolean checkAndIncrementIpLimit(String ip) {
+    /** 🔐 فحص الحد (بدون زيادة) */
+    private boolean isIpLimitExceeded(String ip) {
         IpRegistrationLimit record = ipRegistrationLimitRepository
                 .findById(ip)
                 .orElse(new IpRegistrationLimit(ip));
 
         if (record.getRegistrationCount() >= MAX_ACCOUNTS_PER_IP) {
             System.out.println("🚨 IP limit exceeded for: " + ip + " (count=" + record.getRegistrationCount() + ")");
-            return false; // مافيشش متساح
+            return true; // متجاوز الحد
         }
+        return false; // مسموح
+    }
 
+    /** 🔐 زيادة العداد بعد نجاح التسجيل */
+    private void incrementIpLimit(String ip) {
+        IpRegistrationLimit record = ipRegistrationLimitRepository
+                .findById(ip)
+                .orElse(new IpRegistrationLimit(ip));
         record.setRegistrationCount(record.getRegistrationCount() + 1);
         record.setLastRegisteredAt(LocalDateTime.now());
         ipRegistrationLimitRepository.save(record);
         System.out.println("✅ IP registration count for " + ip + ": " + record.getRegistrationCount() + "/" + MAX_ACCOUNTS_PER_IP);
-        return true; // مسموح
     }
 
     /**
@@ -98,7 +105,7 @@ public class UserController {
 
             // 🔐 فحص حد التسجيل من نفس الجهاز (5 حسابات كحد أقصى)
             String clientIp = resolveClientIp(request);
-            if (!checkAndIncrementIpLimit(clientIp)) {
+            if (isIpLimitExceeded(clientIp)) {
                 return ResponseEntity.status(429).body(
                     "تم الوصول للحد الأقصى للحسابات المسجّلة من هذا الجهاز (" + MAX_ACCOUNTS_PER_IP + " حسابات كحد أقصى). " +
                     "للاستفسار تواصل مع إدارة الموقع."
@@ -106,6 +113,10 @@ public class UserController {
             }
 
             User savedAccount = userService.registerPatient(userDTO);
+
+            // ✅ التسجيل نجح، زوّد عداد الـ IP
+            incrementIpLimit(clientIp);
+
             return ResponseEntity.ok(UserResponseDTO.from(savedAccount));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
