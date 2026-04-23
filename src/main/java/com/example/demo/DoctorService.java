@@ -10,6 +10,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.*;
 import java.security.SecureRandom;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.util.StringUtils;
 
 import static com.example.demo.Role.ROLE_DOCTOR;
 import com.example.demo.DTO.UpdateProfileDTO;
@@ -90,15 +93,19 @@ public class DoctorService {
     }
 
     /**
-     * ✅ 2. رفع الشهادة
+     * ✅ 2. رفع الشهادة (PDF فقط)
+     * 🔐 محمي ضد Path Traversal — UUID عشوائي بدل اسم الملف الأصلي
      */
     public String uploadCertificate(Long id, MultipartFile file) throws IOException {
         String uploadDir = "uploads/certificates/";
-        java.io.File dir = new java.io.File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
+        new java.io.File(uploadDir).mkdirs();
 
-        String fileName = "doctor_" + id + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        Path filePath = Paths.get(uploadDir + fileName);
+        // ✅ الامتداد فقط — نرفض أي نوع غير PDF
+        String ext = extractSafeExtension(file.getOriginalFilename(), List.of(".pdf"));
+
+        // ✅ اسم عشوائي كامل — لا اسم الملف الأصلي
+        String fileName = "cert_" + id + "_" + UUID.randomUUID() + ext;
+        Path filePath = Paths.get(uploadDir).resolve(fileName);
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
         Doctor doctor = doctorRepository.findById(id)
@@ -222,14 +229,15 @@ public class DoctorService {
 
     /**
      * ✅ 9. رفع صورة الغلاف
+     * 🔐 محمي ضد Path Traversal — UUID عشوائي بدل اسم الملف الأصلي
      */
     public String uploadCover(String nationalId, MultipartFile file) throws IOException {
         String uploadDir = "uploads/covers/";
-        java.io.File dir = new java.io.File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
+        new java.io.File(uploadDir).mkdirs();
 
-        String fileName = "cover_" + nationalId + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        Path filePath = Paths.get(uploadDir + fileName);
+        String ext = extractSafeExtension(file.getOriginalFilename(), List.of(".jpg", ".jpeg", ".png", ".webp"));
+        String fileName = "cover_" + UUID.randomUUID() + ext;
+        Path filePath = Paths.get(uploadDir).resolve(fileName);
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
         Doctor doctor = doctorRepository.findByNationalId(nationalId)
@@ -243,14 +251,15 @@ public class DoctorService {
 
     /**
      * ✅ 10. رفع الصورة الشخصية
+     * 🔐 محمي ضد Path Traversal — UUID عشوائي بدل اسم الملف الأصلي
      */
     public String uploadPhoto(String nationalId, MultipartFile file) throws IOException {
         String uploadDir = "uploads/photos/";
-        java.io.File dir = new java.io.File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
+        new java.io.File(uploadDir).mkdirs();
 
-        String fileName = "photo_" + nationalId + "_" + System.currentTimeMillis() + "_" + file.getOriginalFilename();
-        Path filePath = Paths.get(uploadDir + fileName);
+        String ext = extractSafeExtension(file.getOriginalFilename(), List.of(".jpg", ".jpeg", ".png", ".webp"));
+        String fileName = "photo_" + UUID.randomUUID() + ext;
+        Path filePath = Paths.get(uploadDir).resolve(fileName);
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
 
         Doctor doctor = doctorRepository.findByNationalId(nationalId)
@@ -260,6 +269,21 @@ public class DoctorService {
         doctorRepository.save(doctor);
 
         return doctor.getDoctorPhoto();
+    }
+
+    /**
+     * ✅ Helper — استخراج الامتداد بأمان (من قائمة بيضاء فقط)
+     * 🚫 يرفض أي امتداد غير مسموح به (jsp, php, sh...)
+     */
+    private String extractSafeExtension(String originalFilename, List<String> allowedExtensions) {
+        if (originalFilename == null || !originalFilename.contains(".")) {
+            throw new RuntimeException("يجب أن يحتوي الملف على امتداد.");
+        }
+        String ext = originalFilename.substring(originalFilename.lastIndexOf('.')).toLowerCase().trim();
+        if (!allowedExtensions.contains(ext)) {
+            throw new RuntimeException("نوع الملف '" + ext + "' غير مسموح. الامتدادات المقبولة: " + allowedExtensions);
+        }
+        return ext;
     }
 
     /**

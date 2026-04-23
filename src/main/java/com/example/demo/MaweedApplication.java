@@ -35,9 +35,4 @@ public class MaweedApplication {
         }
         SpringApplication.run(MaweedApplication.class, args);
     }
-
-    @Bean
-    public BCryptPasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
 }

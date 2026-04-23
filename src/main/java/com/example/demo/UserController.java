@@ -3,21 +3,71 @@ package com.example.demo;
 import com.example.demo.DTO.LoginResponse;
 import com.example.demo.DTO.UserDTO;
 import com.example.demo.DTO.UserResponseDTO;
+import com.example.demo.domain.IpRegistrationLimit;
+import com.example.demo.repository.IpRegistrationLimitRepository;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDateTime;
+import java.util.concurrent.ConcurrentHashMap;
 
 @CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
 @RestController
 @RequestMapping("/api/auth")
 public class UserController {
 
-    @Autowired
-    private JwtUtil jwtUtil;
+    // 🔐 Rate Limiting: max 5 login attempts per IP per 15 minutes
+    private static final ConcurrentHashMap<String, long[]> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
+    private static final int  MAX_ATTEMPTS  = 5;
+    private static final long WINDOW_MS     = 15 * 60 * 1000L; // 15 minutes
+
+    private boolean isRateLimited(String ip) {
+        long now = System.currentTimeMillis();
+        long[] data = LOGIN_ATTEMPTS.compute(ip, (k, v) -> {
+            if (v == null || now - v[1] > WINDOW_MS) return new long[]{1, now};
+            v[0]++;
+            return v;
+        });
+        return data[0] > MAX_ATTEMPTS;
+    }
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private IpRegistrationLimitRepository ipRegistrationLimitRepository;
+
+    // ──────────────────────────────────────────────────────────
+    /** 🔐 استخراج الـ IP الحقيقي (يتحكم في Proxy/Load Balancer) */
+    private String resolveClientIp(jakarta.servlet.http.HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) ip = request.getHeader("X-Real-IP");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) ip = request.getRemoteAddr();
+        return ip.split(",")[0].trim(); // لو في load balancer بيبعت قائمة IPs
+    }
+
+    /** 🔐 فحص الحد وزيادة العداد (atomic) */
+    private static final int MAX_ACCOUNTS_PER_IP = 5;
+
+    private synchronized boolean checkAndIncrementIpLimit(String ip) {
+        IpRegistrationLimit record = ipRegistrationLimitRepository
+                .findById(ip)
+                .orElse(new IpRegistrationLimit(ip));
+
+        if (record.getRegistrationCount() >= MAX_ACCOUNTS_PER_IP) {
+            System.out.println("🚨 IP limit exceeded for: " + ip + " (count=" + record.getRegistrationCount() + ")");
+            return false; // مافيشش متساح
+        }
+
+        record.setRegistrationCount(record.getRegistrationCount() + 1);
+        record.setLastRegisteredAt(LocalDateTime.now());
+        ipRegistrationLimitRepository.save(record);
+        System.out.println("✅ IP registration count for " + ip + ": " + record.getRegistrationCount() + "/" + MAX_ACCOUNTS_PER_IP);
+        return true; // مسموح
+    }
 
     /**
      * ✅ تسجيل مريض جديد
@@ -28,11 +78,10 @@ public class UserController {
             @Valid @RequestBody UserDTO userDTO,
             jakarta.servlet.http.HttpServletRequest request) {
         try {
-            // 🔒 فحص المصدر — فقط الموقع الرسمي مسموح له بالتسجيل
+            // 🔒 فحص المصدر
             String origin = request.getHeader("Origin");
             String referer = request.getHeader("Referer");
             boolean isValidSource = false;
-
             if (origin != null && (
                     origin.equals("http://localhost:3000") ||
                     origin.equals("https://maweed-ui.vercel.app"))) {
@@ -42,62 +91,54 @@ public class UserController {
                     referer.startsWith("https://maweed-ui.vercel.app"))) {
                 isValidSource = true;
             }
-
             if (!isValidSource) {
                 System.out.println("🚨 محاولة تسجيل من مصدر غير مصرح به! Origin: " + origin + ", Referer: " + referer);
                 return ResponseEntity.status(403).body("غير مصرح. يجب التسجيل من الموقع الرسمي فقط.");
             }
 
-            // بننادي الميثود اللي بتسيف في جدول المرضى فقط
+            // 🔐 فحص حد التسجيل من نفس الجهاز (5 حسابات كحد أقصى)
+            String clientIp = resolveClientIp(request);
+            if (!checkAndIncrementIpLimit(clientIp)) {
+                return ResponseEntity.status(429).body(
+                    "تم الوصول للحد الأقصى للحسابات المسجّلة من هذا الجهاز (" + MAX_ACCOUNTS_PER_IP + " حسابات كحد أقصى). " +
+                    "للاستفسار تواصل مع إدارة الموقع."
+                );
+            }
+
             User savedAccount = userService.registerPatient(userDTO);
-            // 🔒 نرجع DTO آمن بدون password أو activeToken
             return ResponseEntity.ok(UserResponseDTO.from(savedAccount));
         } catch (Exception e) {
-            // معالجة الخطأ في حالة الرقم القومي المسجل مسبقاً
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
 
 
     /**
-     * ✅ ميثود اللوجن الموحدة (مرضى ودكاترة)
+     * ✅ ميثود اللوجن الموحدة (مرضى ودكاترة ومساعدين)
+     * 🔐 UserService يتولى: التحقق من كلمة السر + توليد JWT + حفظ activeToken
      */
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody UserDTO loginDto) {
+    public ResponseEntity<?> login(@RequestBody UserDTO loginDto,
+                                   jakarta.servlet.http.HttpServletRequest request) {
+        // 🔐 Rate Limiting
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isBlank()) ip = request.getRemoteAddr();
+        ip = ip.split(",")[0].trim();
+        if (isRateLimited(ip)) {
+            System.out.println("🚨 Rate limit exceeded for IP: " + ip);
+            return ResponseEntity.status(429).body("تجاوزت عدد محاولات تسجيل الدخول. حاول مرة أخرى بعد 15 دقيقة.");
+        }
         try {
-            LoginResponse response = userService.login(loginDto.getNationalId(), loginDto.getPassword()); 
-        
+            // ✅ UserService يفعل كل شيء: التحقق، توليد Token، حفظه في DB
+            LoginResponse response = userService.login(loginDto.getNationalId(), loginDto.getPassword());
+
             if (response != null) {
-                // 1. Generate JWT Token
-                String token = jwtUtil.generateToken(response.getNationalId(), response.getRole());
-                response.setToken(token);
-
-                // 2. Save active token to database to prevent concurrent logins globally
-                if ("ROLE_PATIENT".equals(response.getRole())) {
-                    userRepository.findByNationalId(response.getNationalId()).ifPresent(u -> {
-                        u.setActiveToken(token);
-                        userRepository.save(u);
-                    });
-                } else if ("ROLE_DOCTOR".equals(response.getRole())) {
-                    doctorRepository.findByNationalId(response.getNationalId()).ifPresent(d -> {
-                        d.setActiveToken(token);
-                        doctorRepository.save(d);
-                    });
-                } else if ("ROLE_ACCOUNTANT".equals(response.getRole())) {
-                    assistantRepository.findByAssistantNationalId(response.getNationalId()).forEach(a -> {
-                        if ("APPROVED".equals(a.getStatus())) {
-                            a.setActiveToken(token);
-                            assistantRepository.save(a);
-                        }
-                    });
-                }
-
                 return ResponseEntity.ok(response);
             }
             return ResponseEntity.status(401).body("الرقم القومي أو كلمة المرور غير صحيحة");
         } catch (RuntimeException e) {
-            // معالجة خطأ الدخول المتعدد (أو أي خطأ صريح من UserService)
-            return ResponseEntity.status(409).body(e.getMessage()); // 409 Conflict
+            // حساب موقوف أو دخول متزامن من جهاز آخر
+            return ResponseEntity.status(401).body(e.getMessage());
         }
     }
 
@@ -146,10 +187,23 @@ public class UserController {
     }
 
     /**
-     * ✅ جلب الملف الطبي للمريض عن طريق الرقم القومي
+     * ✅ جلب الملف الطبي للمريض — المستخدم نفسه أو طبيب/مساعد (حماية IDOR)
      */
     @GetMapping("/profile/{nationalId}")
     public ResponseEntity<?> getUserProfile(@PathVariable String nationalId) {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        String callerRole = auth != null && !auth.getAuthorities().isEmpty()
+                ? auth.getAuthorities().iterator().next().getAuthority() : null;
+        String callerId = auth != null ? auth.getName() : null;
+
+        // 🔐 فقط صاحب الحساب أو طبيب أو مساعد
+        boolean isOwner     = nationalId.equals(callerId);
+        boolean isPrivileged = "ROLE_DOCTOR".equals(callerRole)
+                            || "ROLE_ACCOUNTANT".equals(callerRole);
+        if (!isOwner && !isPrivileged) {
+            return ResponseEntity.status(403).body("غير مصرح لك بالاطلاع على بيانات هذا المريض.");
+        }
+
         java.util.Optional<User> userOptional = userRepository.findByNationalId(nationalId);
         if (userOptional.isPresent()) {
             return ResponseEntity.ok(UserResponseDTO.from(userOptional.get()));
@@ -158,10 +212,18 @@ public class UserController {
     }
 
     /**
-     * ✅ تحديث الملف الطبي للمريض
+     * ✅ تحديث الملف الطبي — صاحب الحساب فقط (حماية IDOR)
      */
     @PutMapping("/profile/{nationalId}")
-    public ResponseEntity<?> updateUserProfile(@PathVariable String nationalId, @RequestBody com.example.demo.DTO.UserProfileDTO profileDTO) {
+    public ResponseEntity<?> updateUserProfile(@PathVariable String nationalId,
+                                               @RequestBody com.example.demo.DTO.UserProfileDTO profileDTO) {
+        // 🔐 فقط صاحب الحساب نفسه يقدر يعدّل بياناته
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        String callerId = auth != null ? auth.getName() : null;
+        if (!nationalId.equals(callerId)) {
+            return ResponseEntity.status(403).body("غير مصرح لك بتعديل بيانات مستخدم آخر.");
+        }
+
         java.util.Optional<User> userOptional = userRepository.findByNationalId(nationalId);
         if (userOptional.isPresent()) {
             User user = userOptional.get();
@@ -171,7 +233,6 @@ public class UserController {
             user.setAge(profileDTO.getAge());
             user.setChronicDiseases(profileDTO.getChronicDiseases());
             user.setAllergies(profileDTO.getAllergies());
-            
             userRepository.save(user);
             return ResponseEntity.ok(UserResponseDTO.from(user));
         }

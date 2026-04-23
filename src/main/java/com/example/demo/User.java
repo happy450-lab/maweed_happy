@@ -33,8 +33,8 @@ public class User {
     private Role role;
 
     private boolean enabled = false;
-    @Transient
-    private int noShowCount = 0; // تتبع عدد غيابات المريض عن الكشوفات (column added via migration)
+    @Column(columnDefinition = "int default 0")
+    private int noShowCount = 0; // عدد غيابات المريض — يؤدي للحظر بعد 3 مرات
     private LocalDateTime createDate = LocalDateTime.now();
 
     @Transient

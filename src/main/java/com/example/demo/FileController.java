@@ -31,12 +31,20 @@ public class FileController {
 
     private ResponseEntity<Resource> serveFile(String directory, String filename) {
         try {
-            Path filePath = Paths.get(directory).resolve(filename).normalize();
+            Path baseDir = Paths.get(directory).toAbsolutePath().normalize();
+            Path filePath = baseDir.resolve(filename).normalize();
+
+            // 🔐 Path Traversal Protection: تأكد أن المسار لا يخرج عن المجلد الأساسي
+            if (!filePath.startsWith(baseDir)) {
+                System.out.println("🚨 Path Traversal attempt blocked! filename: " + filename);
+                return ResponseEntity.status(403).build();
+            }
+
             Resource resource = new UrlResource(filePath.toUri());
 
             if (resource.exists() && resource.isReadable()) {
                 return ResponseEntity.ok()
-                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + resource.getFilename() + "\"")
+                        .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filePath.getFileName() + "\"")
                         .body(resource);
             } else {
                 return ResponseEntity.notFound().build();

@@ -1,8 +1,10 @@
 package com.example.demo;
 
 import com.example.demo.domain.AssistantRequest;
+import com.example.demo.domain.IpRegistrationLimit;
 import com.example.demo.repository.AssistantRequestRepository;
 import com.example.demo.repository.DoctorRepository;
+import com.example.demo.repository.IpRegistrationLimitRepository;
 import com.example.demo.DTO.DoctorAdminDTO;
 import com.example.demo.DTO.AssistantResponseDTO;
 import com.example.demo.repository.ReviewRepository;
@@ -12,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +38,9 @@ public class AdminController {
 
     @Autowired
     private ReviewRepository reviewRepository;
+
+    @Autowired
+    private IpRegistrationLimitRepository ipRegistrationLimitRepository;
 
     // ═══════════════════════════════════════════════
     // 🔔 NOTIFICATION BADGE — عدد الطلبات المعلقة
@@ -274,5 +280,63 @@ public class AdminController {
         }
         reviewRepository.deleteById(id);
         return ResponseEntity.ok("تم حذف التعليق بنجاح");
+    }
+
+    // ═══════════════════════════════════════════════
+    // 🔐 IP REGISTRATION LIMITS — إدارة حدود التسجيل
+    // ═══════════════════════════════════════════════
+
+    /**
+     * ✅ قائمة كل الـ IPs اللي تجاوزت 0 تسجيل، مرتبة تنازليًا بالعدد
+     */
+    @GetMapping("/ip-limits")
+    public ResponseEntity<List<Map<String, Object>>> getAllIpLimits() {
+        List<Map<String, Object>> result = ipRegistrationLimitRepository.findAll()
+                .stream()
+                .sorted(Comparator.comparingInt(IpRegistrationLimit::getRegistrationCount).reversed())
+                .map(rec -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("ip",               rec.getIpAddress());
+                    m.put("count",            rec.getRegistrationCount());
+                    m.put("firstRegistered",  rec.getFirstRegisteredAt());
+                    m.put("lastRegistered",   rec.getLastRegisteredAt());
+                    m.put("limitReached",     rec.getRegistrationCount() >= 5);
+                    return m;
+                })
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * ✅ مسح سجل IP — بيسمح للمستخدم يسجّل من جديد (reset)
+     * يفيد مثلاً لو حد غلطًا أو في IP شبكة مشتركة (مستشفى، مدرسة)
+     */
+    @DeleteMapping("/ip-limits/{ip}")
+    public ResponseEntity<?> resetIpLimit(@PathVariable String ip) {
+        if (!ipRegistrationLimitRepository.existsById(ip)) {
+            return ResponseEntity.notFound().build();
+        }
+        ipRegistrationLimitRepository.deleteById(ip);
+        System.out.println("✅ Admin reset IP limit for: " + ip);
+        return ResponseEntity.ok("تم مسح سجل التسجيل لـ IP: " + ip + ". يمكنه الآن تسجيل 5 حسابات جديدة.");
+    }
+
+    /**
+     * ✅ تعديل العداد يدويًا — مفيد لو شبكة مشتركة (IP مستشفى) محتاجة حد أعلى
+     * مثلاً: PUT /api/admin/ip-limits/1.2.3.4/set-count?count=0
+     */
+    @PutMapping("/ip-limits/{ip}/set-count")
+    public ResponseEntity<?> setIpCount(
+            @PathVariable String ip,
+            @RequestParam int count) {
+        if (count < 0) return ResponseEntity.badRequest().body("العدد لا يمكن أن يكون سالبًا.");
+        IpRegistrationLimit record = ipRegistrationLimitRepository
+                .findById(ip)
+                .orElse(new IpRegistrationLimit(ip));
+        record.setRegistrationCount(count);
+        record.setLastRegisteredAt(LocalDateTime.now());
+        ipRegistrationLimitRepository.save(record);
+        System.out.println("✅ Admin set IP count for " + ip + " to " + count);
+        return ResponseEntity.ok("تم تعديل عداد التسجيل لـ IP " + ip + " إلى " + count + "/5.");
     }
 }

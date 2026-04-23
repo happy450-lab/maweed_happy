@@ -14,10 +14,17 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    /** ✅ BCrypt encoder — يُستخدم في تشفير ومقارنة كلمات السر */
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 
     @Autowired
     private JwtFilter jwtFilter;
@@ -29,8 +36,12 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // ✅ Public — بدون توكن
-                .requestMatchers("/api/auth/**").permitAll()
+                // ✅ Public — بدون توكن (محدد بدقة)
+                .requestMatchers("/api/auth/login").permitAll()
+                .requestMatchers("/api/auth/register").permitAll()
+                .requestMatchers("/api/auth/logout").permitAll()   // logout يقبل بدون توكن (لو انتهت الجلسة)
+                // 🔐 /api/auth/profile/** تتطلب توكن — لا تضعها هنا!
+
                 .requestMatchers("/api/doctors/register").permitAll()
                 .requestMatchers("/api/doctors/activate").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/doctors").permitAll()
@@ -43,9 +54,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/admin/**").permitAll() // يُدار بواسطة AdminSecurityFilter المستقل في Order(1)
                 .requestMatchers(HttpMethod.GET, "/api/reviews/recent-high").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/doctors/top").permitAll()
-                .requestMatchers("/error").permitAll() // لعدم حجب أخطاء 500 وتحويلها لـ 403
-                
-                // 🔐 بقية الـ APIs تتطلب توكن JWT صالح
+                .requestMatchers("/error").permitAll()
+
+                // 🔐 كل الباقي يتطلب JWT صالح
                 .anyRequest().authenticated()
             )
             .formLogin(form -> form.disable())

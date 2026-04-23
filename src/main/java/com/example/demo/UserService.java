@@ -7,11 +7,15 @@ import com.example.demo.repository.DoctorRepository;
 import com.example.demo.repository.AssistantRequestRepository;
 import com.example.demo.domain.AssistantRequest;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.util.Optional;
 
 @Service
 public class UserService {
+
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
 
     @Autowired
     private UserRepository userRepository;
@@ -24,9 +28,6 @@ public class UserService {
 
     @Autowired
     private JwtUtil jwtUtil;
-
-    @Autowired
-    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     public User registerPatient(UserDTO dto) {
         validateBasicData(dto.getFullName(), dto.getNationalId(), dto.getPhoneNumber());
@@ -132,6 +133,12 @@ public class UserService {
                         System.out.println("🔒 Upgraded legacy plaintext password to BCrypt for patient: " + nationalId);
                     }
                 }
+            }
+
+            // ✅ فحص الحظر: المريض يُحظر إذا تجاوز عدد غياباته 3 مرات
+            if (u.getNoShowCount() >= 3) {
+                System.out.println("🚫 Login blocked: account disabled for (No-Show >= 3): " + nationalId);
+                throw new RuntimeException("حسابك موقوف بسبب تكرار الغياب (3 مرات). تواصل مع إدارة الموقع للاستفسار.");
             }
 
             if (isPasswordMatch) {

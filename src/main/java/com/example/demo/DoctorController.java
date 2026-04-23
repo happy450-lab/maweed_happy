@@ -5,7 +5,9 @@ import com.example.demo.DTO.DoctorResponseDTO;
 import com.example.demo.DTO.DoctorPrivateDTO;
 import com.example.demo.DTO.AssistantResponseDTO;
 import com.example.demo.DTO.UserDTO;
+import com.example.demo.domain.IpRegistrationLimit;
 import com.example.demo.repository.DoctorRepository;
+import com.example.demo.repository.IpRegistrationLimitRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,7 @@ import com.example.demo.DTO.UpdateProfileDTO;
 import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.WorkingHourRepository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,7 +33,6 @@ public class DoctorController {
     @Autowired
     private DoctorRepository doctorRepository;
 
-    
     @Autowired
     private DoctorService doctorService;
 
@@ -39,6 +41,34 @@ public class DoctorController {
 
     @Autowired
     private WorkingHourRepository workingHourRepository;
+
+    @Autowired
+    private IpRegistrationLimitRepository ipRegistrationLimitRepository;
+
+    private static final int MAX_ACCOUNTS_PER_IP = 5;
+
+    /** 🔐 نفس اللوجيك الموجودة في UserController */
+    private String resolveClientIp(jakarta.servlet.http.HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) ip = request.getHeader("X-Real-IP");
+        if (ip == null || ip.isBlank() || "unknown".equalsIgnoreCase(ip)) ip = request.getRemoteAddr();
+        return ip.split(",")[0].trim();
+    }
+
+    private synchronized boolean checkAndIncrementIpLimit(String ip) {
+        IpRegistrationLimit record = ipRegistrationLimitRepository
+                .findById(ip)
+                .orElse(new IpRegistrationLimit(ip));
+        if (record.getRegistrationCount() >= MAX_ACCOUNTS_PER_IP) {
+            System.out.println("🚨 IP limit exceeded (doctor reg) for: " + ip);
+            return false;
+        }
+        record.setRegistrationCount(record.getRegistrationCount() + 1);
+        record.setLastRegisteredAt(LocalDateTime.now());
+        ipRegistrationLimitRepository.save(record);
+        System.out.println("✅ IP doctor registration count for " + ip + ": " + record.getRegistrationCount() + "/" + MAX_ACCOUNTS_PER_IP);
+        return true;
+    }
 
     private String getCurrentUser() {
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
@@ -70,7 +100,7 @@ public class DoctorController {
     @PostMapping("/register")
     public ResponseEntity<?> registerDoctor(@RequestBody DoctorDTO dto, jakarta.servlet.http.HttpServletRequest request) {
         try {
-            // 🔒 حماية: فقط الطلبات القادمة من الموقع الرسمي
+            // 🔒 فحص المصدر
             String origin = request.getHeader("Origin");
             String referer = request.getHeader("Referer");
             boolean isValidSource = false;
@@ -81,6 +111,15 @@ public class DoctorController {
             }
             if (!isValidSource) {
                 return ResponseEntity.status(403).body("غير مصرح. يجب التسجيل من الموقع الرسمي فقط.");
+            }
+
+            // 🔐 فحص حد التسجيل من نفس الجهاز (5 حسابات مشتركة مريض + طبيب)
+            String clientIp = resolveClientIp(request);
+            if (!checkAndIncrementIpLimit(clientIp)) {
+                return ResponseEntity.status(429).body(
+                    "تم الوصول للحد الأقصى للحسابات المسجّلة من هذا الجهاز (" + MAX_ACCOUNTS_PER_IP + " حسابات كحد أقصى). " +
+                    "للاستفسار تواصل مع إدارة الموقع."
+                );
             }
 
             Doctor newDoctor = doctorService.registerDoctor(dto);
@@ -107,10 +146,22 @@ public class DoctorController {
     }
 
     /**
-     * ✅ 3. توليد كود التفعيل (للمدير)
+     * ✅ 3. توليد كود التفعيل — محمي بالـ Admin Token فقط
+     * 🔐 هذا الـ endpoint خطير: يعيد توليد كود أي طبيب ويسبب خروجه القسري من النظام
+     * لذلك تم تقييده ليصل فقط عبر Admin Panel
      */
     @PostMapping("/generate-code/{nationalId}")
-    public ResponseEntity<String> generateCode(@PathVariable String nationalId) {
+    public ResponseEntity<String> generateCode(
+            @PathVariable String nationalId,
+            jakarta.servlet.http.HttpServletRequest request) {
+        // 🔐 فحص Admin token من الـ header
+        String authHeader = request.getHeader("Authorization");
+        String adminToken = System.getenv("ADMIN_SECRET_TOKEN");
+        if (adminToken == null) adminToken = "maweed_admin_2026"; // fallback
+        if (authHeader == null || !authHeader.equals("Bearer " + adminToken)) {
+            System.out.println("🚨 Unauthorized generate-code attempt for: " + nationalId);
+            return ResponseEntity.status(403).body("غير مصرح لك باستخدام هذا المسار.");
+        }
         try {
             String code = doctorService.generateAndSaveAccessCode(nationalId);
             return ResponseEntity.ok("تم إنشاء الكود بنجاح: " + code);
@@ -181,13 +232,31 @@ public class DoctorController {
 
     /**
      * ✅ 7.1 جلب تفاصيل طبيب واحد بالرقم القومي
-     * 🔐 هذا الـ endpoint محمي بتوكن JWT — فقط للطبيب والمساعد
+     * 🔐 محمي بتوكن JWT — فقط للطبيب نفسه أو مساعده المرتبط به
      * يرجع DoctorPrivateDTO الذي يحتوي على specialAccessCode و phoneNumberDoctor
      */
     @GetMapping("/nationalId/{nationalId}")
     public ResponseEntity<DoctorPrivateDTO> getDoctorByNationalId(@PathVariable String nationalId) {
+        String role   = getCurrentRole();
+        String caller = getCurrentUser();
+
+        // 🔐 فقط الطبيب نفسه
+        boolean isOwnDoctor = "ROLE_DOCTOR".equals(role) && nationalId.equals(caller);
+        // 🔐 مساعد مرتبط بهذا الطبيب تحديداً
+        boolean isLinkedAssistant = false;
+        if ("ROLE_ACCOUNTANT".equals(role) && caller != null) {
+            isLinkedAssistant = assistantRequestRepository
+                    .findByAssistantNationalId(caller)
+                    .stream()
+                    .anyMatch(a -> nationalId.equals(a.getDoctorNationalId()) && "APPROVED".equals(a.getStatus()));
+        }
+
+        if (!isOwnDoctor && !isLinkedAssistant) {
+            return ResponseEntity.status(403).build();
+        }
+
         return doctorRepository.findByNationalId(nationalId)
-                .map(doctor -> ResponseEntity.ok().body(DoctorPrivateDTO.from(doctor)))
+                .map(d -> ResponseEntity.ok().body(DoctorPrivateDTO.from(d)))
                 .orElse(ResponseEntity.notFound().build());
     }
 
@@ -238,14 +307,26 @@ public class DoctorController {
 
     /**
      * ✅ 9. حذف مساعد
+     * 🔐 تحقق من ملكية المساعد قبل الحذف (IDOR protection)
      */
     @DeleteMapping("/assistant/{id}")
     public ResponseEntity<?> deleteAssistant(@PathVariable Long id) {
-        if (assistantRequestRepository.existsById(id)) {
-            assistantRequestRepository.deleteById(id);
-            return ResponseEntity.ok("تم حذف المساعد بنجاح");
+        String currentUser = getCurrentUser();
+        String currentRole = getCurrentRole();
+
+        java.util.Optional<com.example.demo.domain.AssistantRequest> opt =
+                assistantRequestRepository.findById(id);
+        if (opt.isEmpty()) return ResponseEntity.notFound().build();
+
+        com.example.demo.domain.AssistantRequest ar = opt.get();
+
+        // 🔐 الطبيب فقط يحذف مساعديه هو نفسه
+        if ("ROLE_DOCTOR".equals(currentRole) && !ar.getDoctorNationalId().equals(currentUser)) {
+            return ResponseEntity.status(403).body("لا يمكنك حذف مساعد لا يخصك.");
         }
-        return ResponseEntity.notFound().build();
+
+        assistantRequestRepository.deleteById(id);
+        return ResponseEntity.ok("تم حذف المساعد بنجاح");
     }
 
     /**
