@@ -131,10 +131,27 @@ public class UserController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody UserDTO loginDto,
                                    jakarta.servlet.http.HttpServletRequest request) {
+        
+        // 🔒 فحص المصدر (Origin/Referer) لمنع تسجيل الدخول من برامج خارجية مثل Postman
+        String origin = request.getHeader("Origin");
+        String referer = request.getHeader("Referer");
+        boolean isValidSource = false;
+        if (origin != null && (
+                origin.equals("http://localhost:3000") ||
+                origin.equals("https://maweed-ui.vercel.app"))) {
+            isValidSource = true;
+        } else if (referer != null && (
+                referer.startsWith("http://localhost:3000") ||
+                referer.startsWith("https://maweed-ui.vercel.app"))) {
+            isValidSource = true;
+        }
+        if (!isValidSource) {
+            System.out.println("🚨 محاولة تسجيل دخول من مصدر غير مصرح به! Origin: " + origin + ", Referer: " + referer);
+            return ResponseEntity.status(403).body("غير مصرح. يجب الدخول من الموقع الرسمي فقط.");
+        }
+
         // 🔐 Rate Limiting
-        String ip = request.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isBlank()) ip = request.getRemoteAddr();
-        ip = ip.split(",")[0].trim();
+        String ip = resolveClientIp(request); // استخدام الدالة الموحدة الموثوقة بدلا من تكرار الكود
         if (isRateLimited(ip)) {
             System.out.println("🚨 Rate limit exceeded for IP: " + ip);
             return ResponseEntity.status(429).body("تجاوزت عدد محاولات تسجيل الدخول. حاول مرة أخرى بعد 15 دقيقة.");
@@ -185,11 +202,13 @@ public class UserController {
                 doctorRepository.save(doctor.get());
             }
         } else if (role.equals("ROLE_ACCOUNTANT")) {
-            var assistants = assistantRepository.findByAssistantNationalId(nationalId);
-            for (var a : assistants) {
-                if ("APPROVED".equals(a.getStatus())) {
-                    a.setActiveToken(null);
-                    assistantRepository.save(a);
+            java.util.List<com.example.demo.domain.AssistantRequest> assistants = assistantRepository.findByAssistantNationalId(nationalId);
+            if (assistants != null) {
+                for (com.example.demo.domain.AssistantRequest a : assistants) {
+                    if ("APPROVED".equals(a.getStatus())) {
+                        a.setActiveToken(null);
+                        assistantRepository.save(a);
+                    }
                 }
             }
         }

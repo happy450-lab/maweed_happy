@@ -18,6 +18,8 @@ import com.example.demo.domain.AssistantRequest;
 import com.example.demo.DTO.UpdateProfileDTO;
 import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.WorkingHourRepository;
+import com.example.demo.domain.DoctorArchivePatient;
+import com.example.demo.repository.DoctorArchivePatientRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,6 +46,9 @@ public class DoctorController {
 
     @Autowired
     private IpRegistrationLimitRepository ipRegistrationLimitRepository;
+
+    @Autowired
+    private DoctorArchivePatientRepository doctorArchivePatientRepository;
 
     private static final int MAX_ACCOUNTS_PER_IP = 5;
 
@@ -422,5 +427,53 @@ public class DoctorController {
     @GetMapping("/{nationalId}/working-hours")
     public ResponseEntity<List<WorkingHour>> getWorkingHours(@PathVariable String nationalId) {
         return ResponseEntity.ok(workingHourRepository.findByDoctorNationalId(nationalId));
+    }
+
+    /**
+     * ✅ 17. رفع ملف مرضى سابقين (من الإكسيل)
+     */
+    @PostMapping("/{nationalId}/archive-patients/upload")
+    public ResponseEntity<?> uploadArchivePatients(@PathVariable String nationalId, @RequestBody List<Map<String, String>> patients) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
+        try {
+            int addedCount = 0;
+            for (Map<String, String> p : patients) {
+                String name = p.get("name");
+                String phone = p.get("phone");
+                String year = p.get("year");
+                if (name == null || name.trim().isEmpty()) continue;
+                
+                // منع التكرار بناءً على رقم الهاتف إن وُجد
+                if (phone != null && !phone.trim().isEmpty()) {
+                    if (doctorArchivePatientRepository.existsByDoctorNationalIdAndPatientPhone(nationalId, phone.trim())) {
+                        continue; // مريض مسجل مسبقاً
+                    }
+                }
+                
+                DoctorArchivePatient archivePatient = new DoctorArchivePatient(nationalId, name.trim(), phone != null ? phone.trim() : "");
+                if (year != null && !year.trim().isEmpty()) {
+                    archivePatient.setVisitYear(year.trim());
+                }
+                doctorArchivePatientRepository.save(archivePatient);
+                addedCount++;
+            }
+            return ResponseEntity.ok(addedCount);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("فشل إضافة المرضى: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 18. جلب مرضى الأرشيف السابقين
+     */
+    @GetMapping("/{nationalId}/archive-patients")
+    public ResponseEntity<?> getArchivePatients(@PathVariable String nationalId) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
+        try {
+            List<DoctorArchivePatient> list = doctorArchivePatientRepository.findByDoctorNationalId(nationalId);
+            return ResponseEntity.ok(list);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("فشل جلب مرضى الأرشيف: " + e.getMessage());
+        }
     }
 }
