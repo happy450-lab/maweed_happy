@@ -26,6 +26,7 @@ public class Prescription {
     private String patientNationalId;
 
     @Column(nullable = true)
+    @Convert(converter = AttributeEncryptor.class)
     private String patientName;
 
     @Column(nullable = true)
@@ -35,12 +36,15 @@ public class Prescription {
     private String consultationDate;
 
     @Column(columnDefinition = "TEXT")
+    @Convert(converter = AttributeEncryptor.class)
     private String diagnosis;
 
     @Column(columnDefinition = "TEXT")
+    @Convert(converter = AttributeEncryptor.class)
     private String medicines;
 
     @Column(columnDefinition = "TEXT")
+    @Convert(converter = AttributeEncryptor.class)
     private String instructions;
 
     @Column(name = "created_at")

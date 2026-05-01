@@ -20,6 +20,8 @@ import com.example.demo.domain.WorkingHour;
 import com.example.demo.repository.WorkingHourRepository;
 import com.example.demo.domain.DoctorArchivePatient;
 import com.example.demo.repository.DoctorArchivePatientRepository;
+import com.example.demo.repository.DoctorProcedureRepository;
+import jakarta.transaction.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -49,6 +51,9 @@ public class DoctorController {
 
     @Autowired
     private DoctorArchivePatientRepository doctorArchivePatientRepository;
+
+    @Autowired
+    private DoctorProcedureRepository doctorProcedureRepository;
 
     private static final int MAX_ACCOUNTS_PER_IP = 5;
 
@@ -474,6 +479,53 @@ public class DoctorController {
             return ResponseEntity.ok(list);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body("فشل جلب مرضى الأرشيف: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 19. جلب قائمة الخدمات والأسعار الخاصة بالطبيب
+     */
+    @GetMapping("/{nationalId}/procedures")
+    public ResponseEntity<?> getProcedures(@PathVariable String nationalId) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
+        try {
+            Optional<Doctor> doctorOpt = doctorRepository.findByNationalId(nationalId);
+            if (doctorOpt.isEmpty()) return ResponseEntity.notFound().build();
+            
+            List<com.example.demo.DTO.DoctorProcedureDTO> list = doctorProcedureRepository.findByDoctor(doctorOpt.get())
+                    .stream()
+                    .map(p -> new com.example.demo.DTO.DoctorProcedureDTO(p.getId(), p.getName(), p.getPrice()))
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(list);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("خطأ: " + e.getMessage());
+        }
+    }
+
+    /**
+     * ✅ 20. تحديث قائمة الخدمات والأسعار
+     */
+    @Transactional
+    @PostMapping("/{nationalId}/procedures")
+    public ResponseEntity<?> updateProcedures(@PathVariable String nationalId, @RequestBody List<com.example.demo.DTO.DoctorProcedureDTO> procedures) {
+        if (!isAuthorized(nationalId)) return ResponseEntity.status(403).body("غير مصرح");
+        try {
+            Optional<Doctor> doctorOpt = doctorRepository.findByNationalId(nationalId);
+            if (doctorOpt.isEmpty()) return ResponseEntity.notFound().build();
+            
+            Doctor doctor = doctorOpt.get();
+            // حذف القديم
+            doctorProcedureRepository.deleteAll(doctorProcedureRepository.findByDoctor(doctor));
+            
+            // إضافة الجديد
+            for (com.example.demo.DTO.DoctorProcedureDTO dto : procedures) {
+                if (dto.getName() != null && !dto.getName().trim().isEmpty() && dto.getPrice() != null) {
+                    doctorProcedureRepository.save(new com.example.demo.domain.DoctorProcedure(dto.getName().trim(), dto.getPrice(), doctor));
+                }
+            }
+            return ResponseEntity.ok("تم تحديث قائمة الخدمات والأسعار بنجاح");
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("خطأ: " + e.getMessage());
         }
     }
 }

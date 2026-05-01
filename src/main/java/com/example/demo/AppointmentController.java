@@ -118,22 +118,24 @@ public class AppointmentController {
                 return ResponseEntity.status(403).body("لا يمكنك حجز موعد لمريض آخر.");
             }
 
-            // 1. فحص قاعدة: ميعاد واحد للمريض مع نفس الدكتور خلال الـ 3 أيام كحد أقصى
-            LocalDate today = LocalDate.now();
-            LocalDate dayAfterTomorrow = today.plusDays(2);
-            
-            List<Appointment> patientApptsWithThisDoctor = appointmentRepository
-                    .findByPatientAndDoctorInDateRange(
-                            appointment.getPatientNationalId(), 
-                            appointment.getDoctorNationalId(), 
-                            today, 
-                            dayAfterTomorrow
+            // 1. فحص قاعدة: ميعاد واحد للمريض مع نفس الدكتور خلال الـ 3 أيام كحد أقصى (للمريض فقط)
+            if (!"ROLE_DOCTOR".equals(curRole)) {
+                LocalDate today = LocalDate.now();
+                LocalDate dayAfterTomorrow = today.plusDays(2);
+                
+                List<Appointment> patientApptsWithThisDoctor = appointmentRepository
+                        .findByPatientAndDoctorInDateRange(
+                                appointment.getPatientNationalId(), 
+                                appointment.getDoctorNationalId(), 
+                                today, 
+                                dayAfterTomorrow
+                        );
+                        
+                if (!patientApptsWithThisDoctor.isEmpty()) {
+                    return ResponseEntity.badRequest().body(
+                            "لقد قمت بحجز موعد مع هذا الطبيب مسبقاً وتنتظر الكشف. لا يمكنك حجز أكثر من موعد واحد لنفس الطبيب خلال فترة الثلاثة أيام المتاحة."
                     );
-                    
-            if (!patientApptsWithThisDoctor.isEmpty()) {
-                return ResponseEntity.badRequest().body(
-                        "لقد قمت بحجز موعد مع هذا الطبيب مسبقاً وتنتظر الكشف. لا يمكنك حجز أكثر من موعد واحد لنفس الطبيب خلال فترة الثلاثة أيام المتاحة."
-                );
+                }
             }
 
             // 2. فحص التعارض الزمني للدكتور (أقل من 20 دقيقة)
