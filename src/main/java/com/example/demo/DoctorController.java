@@ -96,11 +96,16 @@ public class DoctorController {
     private boolean isAuthorized(String targetNationalId) {
         String role = getCurrentRole();
         String user = getCurrentUser();
-        // For endpoints strictly meant for doctors modifying their own data:
-        if ("ROLE_DOCTOR".equals(role) && user != null && !user.equals(targetNationalId)) {
-            return false;
+        if (role == null || user == null) return false;
+        
+        if ("ROLE_DOCTOR".equals(role)) {
+            return user.equals(targetNationalId);
         }
-        return true;
+        if ("ROLE_ACCOUNTANT".equals(role)) {
+            return assistantRequestRepository.findByAssistantNationalId(user).stream()
+                    .anyMatch(a -> a.getDoctorNationalId().equals(targetNationalId) && "APPROVED".equals(a.getStatus()));
+        }
+        return false;
     }
 
     /**

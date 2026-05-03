@@ -15,8 +15,39 @@ public class DoctorHolidayController {
     @Autowired
     private DoctorService doctorService;
 
+    @Autowired
+    private com.example.demo.repository.AssistantRequestRepository assistantRequestRepository;
+    
+    private String getCurrentUser() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return (auth != null && !auth.getPrincipal().equals("anonymousUser")) ? auth.getName() : null;
+    }
+
+    private String getCurrentRole() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && !auth.getAuthorities().isEmpty() && !auth.getPrincipal().equals("anonymousUser")) {
+            return auth.getAuthorities().iterator().next().getAuthority();
+        }
+        return null;
+    }
+    
+    private boolean isAuthorizedForDoctor(String doctorNationalId) {
+        String role = getCurrentRole();
+        String user = getCurrentUser();
+        if (role == null || user == null) return false;
+        if ("ROLE_DOCTOR".equals(role)) return user.equals(doctorNationalId);
+        if ("ROLE_ACCOUNTANT".equals(role)) {
+            return assistantRequestRepository.findByAssistantNationalId(user).stream()
+                    .anyMatch(a -> a.getDoctorNationalId().equals(doctorNationalId) && "APPROVED".equals(a.getStatus()));
+        }
+        return false;
+    }
+
     @PostMapping("/sudden")
     public ResponseEntity<?> applySuddenHoliday(@PathVariable String nationalId, @RequestBody Map<String, String> payload) {
+        if (!isAuthorizedForDoctor(nationalId)) {
+            return ResponseEntity.status(403).body("غير مصرح لك بإضافة إجازة لهذا الطبيب.");
+        }
         try {
             String dateStr = payload.get("offDate");
             if (dateStr == null || dateStr.isEmpty()) {

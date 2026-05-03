@@ -19,10 +19,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequestMapping("/api/auth")
 public class UserController {
 
-    // 🔐 Rate Limiting: max 5 login attempts per IP per 15 minutes
+    // 🔐 Rate Limiting: max 20 login attempts per IP per 5 minutes
     private static final ConcurrentHashMap<String, long[]> LOGIN_ATTEMPTS = new ConcurrentHashMap<>();
-    private static final int  MAX_ATTEMPTS  = 5;
-    private static final long WINDOW_MS     = 15 * 60 * 1000L; // 15 minutes
+    private static final int  MAX_ATTEMPTS  = 20;
+    private static final long WINDOW_MS     = 5 * 60 * 1000L; // 5 minutes
 
     private boolean isRateLimited(String ip) {
         long now = System.currentTimeMillis();
@@ -161,6 +161,8 @@ public class UserController {
             LoginResponse response = userService.login(loginDto.getNationalId(), loginDto.getPassword());
 
             if (response != null) {
+                // ✅ تسجيل الدخول نجح — صفِّر عداد المحاولات عشان لو عاد الدكتور بنفس المحطة
+                LOGIN_ATTEMPTS.remove(ip);
                 return ResponseEntity.ok(response);
             }
             return ResponseEntity.status(401).body("الرقم القومي أو كلمة المرور غير صحيحة");
@@ -178,6 +180,9 @@ public class UserController {
     
     @Autowired
     private com.example.demo.repository.AssistantRequestRepository assistantRepository;
+
+    @Autowired
+    private com.example.demo.repository.AppointmentRepository appointmentRepository;
 
     @PostMapping("/logout")
     public ResponseEntity<?> logout() {
@@ -226,11 +231,36 @@ public class UserController {
                 ? auth.getAuthorities().iterator().next().getAuthority() : null;
         String callerId = auth != null ? auth.getName() : null;
 
-        // 🔐 فقط صاحب الحساب أو طبيب أو مساعد
-        boolean isOwner     = nationalId.equals(callerId);
-        boolean isPrivileged = "ROLE_DOCTOR".equals(callerRole)
-                            || "ROLE_ACCOUNTANT".equals(callerRole);
-        if (!isOwner && !isPrivileged) {
+        // 🔐 فقط صاحب الحساب أو طبيب/مساعد مرتبط بالمريض
+        boolean isOwner = nationalId.equals(callerId);
+        boolean isAuthorizedDoctorOrAssistant = false;
+
+        if ("ROLE_DOCTOR".equals(callerRole) || "ROLE_ACCOUNTANT".equals(callerRole)) {
+            String doctorIdToCheck = callerId;
+            if ("ROLE_ACCOUNTANT".equals(callerRole)) {
+                // البحث عن الطبيب المرتبط بهذا المساعد
+                java.util.Optional<com.example.demo.domain.AssistantRequest> approvedRequest = assistantRepository.findByAssistantNationalId(callerId)
+                        .stream()
+                        .filter(a -> "APPROVED".equals(a.getStatus()))
+                        .findFirst();
+                if (approvedRequest.isPresent()) {
+                    doctorIdToCheck = approvedRequest.get().getDoctorNationalId();
+                } else {
+                    doctorIdToCheck = null; // مساعد غير معتمد
+                }
+            }
+
+            // التحقق مما إذا كان هناك حجز مسبق بين هذا الطبيب وهذا المريض
+            if (doctorIdToCheck != null) {
+                boolean hasAppointment = appointmentRepository.findByDoctorNationalId(doctorIdToCheck).stream()
+                        .anyMatch(app -> nationalId.equals(app.getPatientNationalId()));
+                if (hasAppointment) {
+                    isAuthorizedDoctorOrAssistant = true;
+                }
+            }
+        }
+
+        if (!isOwner && !isAuthorizedDoctorOrAssistant) {
             return ResponseEntity.status(403).body("غير مصرح لك بالاطلاع على بيانات هذا المريض.");
         }
 

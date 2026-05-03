@@ -31,15 +31,25 @@ public class PrescriptionController {
     @Autowired
     private AssistantRequestRepository assistantRepository;
 
+    private boolean isAuthorizedForDoctor(String doctorNationalId) {
+        String role = getCurrentRole();
+        String user = getCurrentUser();
+        if (role == null || user == null) return false;
+        if ("ROLE_DOCTOR".equals(role)) return user.equals(doctorNationalId);
+        if ("ROLE_ACCOUNTANT".equals(role)) {
+            return assistantRepository.findByAssistantNationalId(user).stream()
+                    .anyMatch(a -> a.getDoctorNationalId().equals(doctorNationalId) && "APPROVED".equals(a.getStatus()));
+        }
+        return false;
+    }
+
     @Autowired
     private PushNotificationService pushNotificationService;
 
     @PostMapping
     public ResponseEntity<?> createPrescription(@RequestBody Prescription prescription) {
-        // 🔐 فقط طبيب أو مساعد ممكن يكتب روشتة
-        String role = getCurrentRole();
-        if (!"ROLE_DOCTOR".equals(role) && !"ROLE_ACCOUNTANT".equals(role)) {
-            return ResponseEntity.status(403).body("غير مصرح لك. فقط الأطباء مسموح لهم بكتابة الروشتات.");
+        if (!isAuthorizedForDoctor(prescription.getDoctorNationalId())) {
+            return ResponseEntity.status(403).body("غير مصرح لك بإضافة روشتة لهذا الطبيب.");
         }
         try {
             Prescription saved = prescriptionRepository.save(prescription);
@@ -74,12 +84,9 @@ public class PrescriptionController {
         return ResponseEntity.ok(prescriptionRepository.findByPatientNationalId(nid));
     }
 
-    // 🔐 فقط الطبيب نفسه يشوف روشتاته (IDOR protection)
     @GetMapping("/doctor/{nid}")
     public ResponseEntity<List<Prescription>> getDoctorPrescriptions(@PathVariable String nid) {
-        String caller = getCurrentUser();
-        String role   = getCurrentRole();
-        if ("ROLE_DOCTOR".equals(role) && !nid.equals(caller)) {
+        if (!isAuthorizedForDoctor(nid)) {
             return ResponseEntity.status(403).build();
         }
         return ResponseEntity.ok(prescriptionRepository.findByDoctorNationalId(nid));

@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @CrossOrigin(origins = {"http://localhost:3000", "https://maweed-ui.vercel.app"})
 @RestController
@@ -71,6 +72,24 @@ public class AppointmentController {
             return auth.getAuthorities().iterator().next().getAuthority();
         }
         return null;
+    }
+
+    @Autowired
+    private com.example.demo.repository.AssistantRequestRepository assistantRequestRepository;
+
+    private boolean isAuthorizedForDoctor(String doctorNationalId) {
+        String role = getCurrentRole();
+        String user = getCurrentUser();
+        if (role == null || user == null) return false;
+        
+        if ("ROLE_DOCTOR".equals(role)) {
+            return user.equals(doctorNationalId);
+        }
+        if ("ROLE_ACCOUNTANT".equals(role)) {
+            return assistantRequestRepository.findByAssistantNationalId(user).stream()
+                    .anyMatch(a -> a.getDoctorNationalId().equals(doctorNationalId) && "APPROVED".equals(a.getStatus()));
+        }
+        return false;
     }
 
     /**
@@ -210,13 +229,37 @@ public class AppointmentController {
      * 2. جلب حجوزات الطبيب (للوحة تحكم الطبيب)
      */
     @GetMapping("/doctor/{nationalId}")
-    public ResponseEntity<List<Appointment>> getDoctorAppointments(@PathVariable String nationalId) {
+    public ResponseEntity<?> getDoctorAppointments(@PathVariable String nationalId) {
         String trimmedId = nationalId.trim();
-
-        // 🔒 التحقق من الهوية (IDOR Protection)
         String curRole = getCurrentRole();
         String curUser = getCurrentUser();
-        if ("ROLE_DOCTOR".equals(curRole) && !trimmedId.equals(curUser)) {
+
+        // 🔑 مريض مسجل دخول يجلب بيانات مجهولة (بدون كشف بيانات المرضى)
+        if ("ROLE_PATIENT".equals(curRole)) {
+            List<Appointment> all = appointmentRepository.findByDoctorNationalId(trimmedId);
+            // إخفاء بيانات المريضين الآخرين من المريض الحالي
+            String myId = curUser;
+            List<java.util.Map<String, Object>> anonymized = all.stream().map(a -> {
+                java.util.Map<String, Object> m = new java.util.HashMap<>();
+                m.put("appointmentDate", a.getAppointmentDate());
+                m.put("appointmentTime", a.getAppointmentTime());
+                m.put("status", a.getStatus());
+                m.put("visitType", a.getVisitType());
+                // فقط نعطي الرقم القومي للمريض نفسه حتى يفيلتر مواعيده من بين الكل
+                if (myId != null && myId.equals(a.getPatientNationalId())) {
+                    m.put("patientNationalId", a.getPatientNationalId());
+                    m.put("id", a.getId());
+                } else {
+                    m.put("patientNationalId", null);
+                    m.put("id", null);
+                }
+                return m;
+            }).collect(Collectors.toList());
+            return ResponseEntity.ok(anonymized);
+        }
+
+        // 🔒 التحقق من الهوية للطبيب والمساعد (IDOR Protection)
+        if (!isAuthorizedForDoctor(trimmedId)) {
             return ResponseEntity.status(403).build();
         }
 
@@ -250,9 +293,7 @@ public class AppointmentController {
             Appointment appointment = optionalAppointment.get();
 
             // 🔒 التحقق من الهوية
-            String curRole = getCurrentRole();
-            String curUser = getCurrentUser();
-            if ("ROLE_DOCTOR".equals(curRole) && !apartmentNationalIdMatchesDoctor(appointment, curUser)) {
+            if (appointment.getDoctorNationalId() != null && !isAuthorizedForDoctor(appointment.getDoctorNationalId().trim())) {
                 return ResponseEntity.status(403).body("غير مصرح لك بتعديل حالة حجز لطبيب آخر.");
             }
 
@@ -308,6 +349,36 @@ public class AppointmentController {
         }
         return ResponseEntity.notFound().build();
     }
+
+    /**
+     * تحديث المبلغ المدفوع في الحجز (أقساط عمليات أو غيره)
+     */
+    @PutMapping("/{id}/pay")
+    public ResponseEntity<?> addPaymentToAppointment(@PathVariable Long id, @RequestBody Map<String, Double> payload) {
+        Optional<Appointment> optionalAppointment = appointmentRepository.findById(id);
+        if (optionalAppointment.isPresent()) {
+            Appointment appointment = optionalAppointment.get();
+
+            // 🔒 التحقق من الهوية
+            if (appointment.getDoctorNationalId() != null && !isAuthorizedForDoctor(appointment.getDoctorNationalId().trim())) {
+                return ResponseEntity.status(403).body("غير مصرح لك بتسجيل أموال لطبيب آخر.");
+            }
+
+            Double amount = payload.get("paidAmount");
+            if (amount != null) {
+                // إذا كان هناك مبلغ مدفوع مسبقاً في نفس الموعد، نزيد عليه (في حالة دفع مرتين في نفس الجلسة)
+                Double currentPaid = appointment.getPaidAmount() != null ? appointment.getPaidAmount() : 0.0;
+                appointment.setPaidAmount(currentPaid + amount);
+                appointmentRepository.save(appointment);
+                
+                // بث التحديث عبر الـ WebSocket لتحديث أرباح اليوم مباشرة
+                messagingTemplate.convertAndSend("/topic/appointments/" + appointment.getDoctorNationalId(), "UPDATE_APPOINTMENT");
+                
+                return ResponseEntity.ok(appointment);
+            }
+        }
+        return ResponseEntity.notFound().build();
+    }
     /**
      * 5. حذف حجز
      */
@@ -324,7 +395,7 @@ public class AppointmentController {
             if ("ROLE_PATIENT".equals(curRole) && !curUser.equals(appointment.getPatientNationalId())) {
                 return ResponseEntity.status(403).body("لا يمكنك حذف حجز لا يخصك.");
             }
-            if ("ROLE_DOCTOR".equals(curRole) && !apartmentNationalIdMatchesDoctor(appointment, curUser)) {
+            if (appointment.getDoctorNationalId() != null && ("ROLE_DOCTOR".equals(curRole) || "ROLE_ACCOUNTANT".equals(curRole)) && !isAuthorizedForDoctor(appointment.getDoctorNationalId().trim())) {
                 return ResponseEntity.status(403).body("لا يمكنك حذف حجز لا يخصك.");
             }
 

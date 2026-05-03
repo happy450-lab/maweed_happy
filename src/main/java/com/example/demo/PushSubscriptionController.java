@@ -27,6 +27,14 @@ public class PushSubscriptionController {
     public ResponseEntity<?> subscribe(
             @RequestHeader("X-National-Id") String nationalId,
             @RequestBody Map<String, Object> body) {
+        // 🔐 IDOR Protection: التحقق من أن المستخدم يسجل اشتراكاته بنفسه فقط
+        var authCtx = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (authCtx != null && !"anonymousUser".equals(authCtx.getPrincipal())) {
+            String caller = authCtx.getName();
+            if (!caller.equals(nationalId)) {
+                return ResponseEntity.status(403).body(Map.of("error", "غير مصرح لك بتسجيل اشتراك لمستخدم آخر."));
+            }
+        }
         try {
             String endpoint  = (String) body.get("endpoint");
             Map<?, ?> keys   = (Map<?, ?>) body.get("keys");

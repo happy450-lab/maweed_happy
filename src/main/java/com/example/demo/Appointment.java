@@ -44,6 +44,10 @@ public class Appointment {
     @Column(columnDefinition = "boolean default false")
     private Boolean isReviewed = false;
 
+    // لتسجيل أي مبالغ تم دفعها خلال هذا الموعد (مثل أقساط العمليات)
+    @Column(nullable = true)
+    private Double paidAmount = 0.0;
+
     // ✅ علم التذكير — عشان السيرفر مابعتش الإشعار أكتر من مرة
     @Column(columnDefinition = "boolean default false")
     private Boolean reminderSent = false;
